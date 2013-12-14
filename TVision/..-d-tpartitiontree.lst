@@ -1,0 +1,52 @@
+       |module tpartitiontree;
+       |
+       |class TVPartitionTree556 {
+       |        private ushort[][][] base;
+       |        debug {
+       |                private int    tables, blocks;
+       |        }
+       |        
+0000000|        this() {
+0000000|                base = new ushort[][][32];
+       |                debug {
+0000000|                        tables=blocks=0;
+       |                }
+       |        }
+       |
+       |        void add(uint unicode, ushort code) {
+0000000|                int index1 = unicode>>11;
+0000000|                int index2 = (unicode>>6) & 0x1F;
+0000000|                ushort[][] t = base[index1];
+0000000|                ushort[] l;
+0000000|                if (t !is null) {
+0000000|                        l = t[index2];
+0000000|                        if (l is null) {
+0000000|                                l = t[index2] = new ushort[64];
+0000000|                                l[] = 0xFF; //memset(l,0xFF,128);
+0000000|                                blocks++;
+       |                        }
+       |                } else {
+0000000|                        t = base[index1] = new ushort[][32];
+       |                        //memset(t,0,sizeof(ushort *)*32);
+0000000|                        l = t[index2] = new ushort[64];
+0000000|                        l[] = 0xFF; //memset(l,0xFF,128);
+0000000|                        tables++;
+0000000|                        blocks++;
+       |                }
+0000000|                l[unicode & 0x3F] = code;
+       |        }
+       |        
+       |        ushort search(uint unicode) {
+0000000|                ushort[][] t = base[unicode>>11];
+0000000|                if (t is null) 
+0000000|                        return 0xFFFF;
+0000000|                ushort[] l = t[(unicode>>6) & 0x1F];
+0000000|                if (l is null)
+0000000|                        return 0xFFFF;
+0000000|                return l[unicode & 0x3F];
+       |        }
+       |        
+       |
+       |}
+       |
+..\d\tpartitiontree.d is 0% covered

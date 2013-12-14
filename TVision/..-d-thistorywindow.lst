@@ -1,0 +1,35 @@
+       |module thistorywindow;
+       |
+       |import tvision;
+       |
+       |private immutable ubyte[] cpHistoryWindow = [0x13, 0x13, 0x15, 0x18, 0x17, 0x13, 0x14];
+       |private immutable TPalette myPalette = immutable(TPalette)( cpHistoryWindow );
+       |
+       |class THistoryWindow : TWindow {
+       |        private TListViewer viewer;
+       |
+0000000|        this( in TRect bounds, HistoryId historyId ) {
+0000000|                super(bounds, null, wnNoNumber);
+0000000|            flags = wfClose;
+0000000|            viewer = createListViewer( getExtent(), this, historyId );
+0000000|            if( viewer !is null )
+0000000|                insert( viewer );
+       |        }
+       |
+       |        override ref immutable(TPalette) getPalette() const {
+0000000|            return myPalette;
+       |        }
+       |
+       |        string getSelection() const {
+0000000|                return viewer.getText( viewer.focused );
+       |        }
+       |
+       |        TListViewer createListViewer( TRect r, TWindow win, HistoryId historyId ) {
+0000000|            r.grow( -1, -1 );
+0000000|            return new THistoryViewer( r,
+       |                win.standardScrollBar( sbHorizontal | sbHandleKeyboard ),
+       |                win.standardScrollBar( sbVertical | sbHandleKeyboard ),
+       |                historyId);
+       |        }
+       |}
+..\d\thistorywindow.d is 0% covered

@@ -1,0 +1,53 @@
+       |module thistoryviewer;
+       |
+       |import tvision;
+       |
+       |class THistoryViewer : TListViewer {
+       |        private HistoryId historyId;
+       |
+0000000|        this( in TRect bounds, TScrollBar aHScrollBar, TScrollBar aVScrollBar, HistoryId aHistoryId) {
+0000000|                super(bounds, 1, aHScrollBar, aVScrollBar);
+0000000|                historyId = aHistoryId;
+0000000|            setRange( historyCount( aHistoryId ) );
+0000000|            if( range > 1 )
+0000000|                focusItem( 1 );
+0000000|            hScrollBar.setRange( 0, historyWidth() - size.x + 3 );
+       |        }
+       |
+       |        override ref immutable(TPalette) getPalette() const {
+0000000|                mixin DefinePalette!([0x06, 0x06, 0x07, 0x06, 0x06]);
+0000000|            return myPalette;
+       |        }
+       |
+       |        override string getText( ccIndex item) const {
+0000000|                return historyStr( historyId, item );
+       |        }
+       |
+       |        override void handleEvent( ref TEvent event ) {
+0000000|            if( (event.what == evMouseDown && event.mouse.doubleClick) ||
+0000000|                (event.what == evKeyDown && event.keyDown.keyCode == KeyCode.kbEnter)
+       |              ) {
+0000000|                endModal( cm.Ok );
+0000000|                clearEvent( event );
+0000000|                } else if( (event.what ==  evKeyDown && event.keyDown.keyCode == KeyCode.kbEsc) ||
+0000000|                    (event.what ==  evCommand && event.message.command ==  cm.Cancel)
+       |                  ) {
+0000000|                    endModal( cm.Cancel );
+0000000|                    clearEvent( event );
+       |                } else {
+0000000|                        TListViewer.handleEvent( event );
+       |                }
+       |        }
+       |
+       |        private int historyWidth() {
+0000000|            int width = 0;
+0000000|            int count = historyCount( historyId );
+0000000|            for( int i = 0; i < count; i++ ) {
+0000000|                int T = historyStr( historyId, i ).length;
+0000000|                width = max( width, T );
+       |                }
+0000000|            return width;
+       |        }
+       |
+       |}
+..\d\thistoryviewer.d is 0% covered

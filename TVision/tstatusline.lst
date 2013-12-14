@@ -1,0 +1,230 @@
+       |module tstatusline;
+       |
+       |import tvision;
+       |
+       |const cpStatusLine = "\x02\x03\x04\x05\x06\x07";
+       |
+       |struct TStatusItem {
+       |        string text;
+       |        KeyCode keyCode;
+       |        Command command;
+       |}
+       |
+       |struct TStatusDef { 
+       |        ushort min, max;
+       |        TStatusItem[] items;
+       |}
+       |
+       |private immutable TPalette palette = immutable(TPalette)(cast(ubyte[])cpStatusLine);
+       |
+       |class TStatusLine : TView {
+       |        static string hintSeparator = ", "; 
+       |
+       |        private TStatusItem[] items;
+       |    private TStatusDef[] defs;
+       |        private int compactStatus;
+       |
+0000000|        this( in TRect bounds, TStatusDef[] aDefs ) {
+0000000|                super(bounds);
+0000000|                defs = aDefs;
+0000000|                options |= ofPreProcess;
+0000000|                eventMask |= evBroadcast;
+0000000|                growMode = gfGrowLoY | gfGrowHiX | gfGrowHiY;
+0000000|                findItems();
+0000000|                computeLength();
+       |        }
+       |
+       |        /**[txh]********************************************************************
+       |
+       |        Description:
+       |        This routine computes the length of the status line, if that's greater than
+       |        the size.x the status line becomes compacted to allow more options.@*
+       |        Added by SET.
+       |
+       |        ***************************************************************************/
+       |
+       |        void computeLength() {
+0000000|                int len = 0;
+0000000|                foreach(item; items) {
+0000000|                        len += item.text.lenWithoutTides;
+       |                }
+0000000|                compactStatus = len > size.x;
+       |        }
+       |
+       |
+       |        /**[txh]********************************************************************
+       |
+       |        Description:
+       |        Calls TView::changeBounds, additionally re-computes the length of the
+       |        line to select the no/compact mode.@*
+       |        Added by SET.
+       |
+       |        ***************************************************************************/
+       |
+       |        override void changeBounds(in TRect bounds) {
+0000000|                TView.changeBounds(bounds);
+0000000|                int oldCompact = compactStatus;
+0000000|                computeLength();
+0000000|                if (compactStatus != oldCompact) {
+0000000|                        draw();
+       |                }
+       |        }
+       |
+       |        override void draw() {
+0000000|                drawSelect( null );
+       |        }
+       |
+       |        void drawSelect( TStatusItem *selected ) {
+0000000|                TDrawBuffer b;
+0000000|                ushort color;
+       |
+0000000|                ushort cNormal = getColor(0x0301);
+0000000|                ushort cSelect = getColor(0x0604);
+0000000|                ushort cNormDisabled = getColor(0x0202);
+0000000|                ushort cSelDisabled = getColor(0x0505);
+0000000|                b.moveChar( 0, ' ', cNormal, size.x );
+0000000|                int i = 0, inc = (compactStatus ? 1 : 2); // SET
+       |
+0000000|                foreach(ref T; items) {
+0000000|                        if( T.text !is null ) {
+0000000|                                int len = T.text.lenWithoutTides;
+0000000|                                if( i + len < size.x ) {
+0000000|                                        if( commandEnabled( T.command) ) {
+0000000|                                                if( &T == selected ) {
+0000000|                                                        color = cSelect;
+       |                                                } else {
+0000000|                                                        color = cNormal;
+       |                                                }
+       |                                        } else {
+0000000|                                                if( &T == selected ) {
+0000000|                                                        color = cSelDisabled;
+       |                                                }else {
+0000000|                                                        color = cNormDisabled;
+       |                                                }
+       |                                        }
+       |
+0000000|                                        b.moveChar( i, ' ', color, 1 );
+0000000|                                        b.moveCStr( i+1, T.text, color );
+0000000|                                        b.moveChar( i+len+1, ' ', color, 1 );
+       |                }
+0000000|                                i += len + inc;
+       |            }
+       |        }
+0000000|                char[] hintBuf;
+0000000|                if (size.y == 1) {
+0000000|                        if( i < size.x - 2 ) {
+0000000|                                hintBuf = hint( helpCtx ).dup;
+0000000|                                if( hintBuf && hintBuf[0] != EOS) {
+0000000|                                        b.moveStr( i, hintSeparator, cNormal );
+0000000|                                        i += 2;
+0000000|                                        if( hintBuf.lenWithoutTides + i > size.x ) {
+0000000|                                                hintBuf[size.x-i] = EOS;
+       |                                        }
+0000000|                                        b.moveCStr( i, cast(string)hintBuf, cNormal );
+       |                                }
+       |                        }
+0000000|                        writeLine( 0, 0, size.x, 1, b );
+       |                } else {
+0000000|                        writeLine( 0, 0, size.x, 1, b );
+0000000|                        hintBuf = hint( helpCtx ).dup;
+0000000|                        hintBuf[size.x] = 0;
+0000000|                        b.moveChar(0, ' ', cNormal, size.x);
+0000000|                        b.moveCStr(0, cast(string)hintBuf, cNormal);
+0000000|                        writeLine( 0, 1, size.x, 1, b );
+       |                }
+       |        }
+       |
+       |        void findItems() {
+0000000|                foreach(ref p; defs) {
+0000000|                        if (helpCtx > p.min || helpCtx < p.max ) {
+0000000|                                items = p.items;
+0000000|                                return;
+       |                        }
+       |                }
+0000000|                items = null;
+       |        }
+       |
+       |        override ref immutable(TPalette) getPalette() const {
+0000000|                return palette;
+       |        }
+       |
+       |        TStatusItem *itemMouseIsIn( in TPoint mouse ) {
+0000000|                if( mouse.y !=  0 )
+0000000|                        return null;
+       |
+0000000|                int i, inc = (compactStatus ? 1 : 2); // SET
+       |
+0000000|                int startX;
+0000000|                foreach(ref T; items) {
+0000000|                        if (T.text !is null) {
+0000000|                                int endX = startX + T.text.length + inc;
+0000000|                                if( mouse.x >= startX && mouse. x < endX )
+0000000|                                        return &T;
+0000000|                                startX = endX;
+       |                        }
+       |                }
+0000000|                return null;
+       |        }
+       |
+       |        override void handleEvent( ref TEvent event ) {
+0000000|                TView.handleEvent(event);
+       |
+0000000|                switch (event.what) {
+0000000|                        case  evMouseDown:
+       |                                {
+0000000|                                        TStatusItem *T;
+       |
+       |                                        do  {
+0000000|                                                TPoint mouse = makeLocal( event.mouse.where );
+0000000|                                                TStatusItem *itemUnderMouse = itemMouseIsIn(mouse);
+0000000|                                                if( T !is itemUnderMouse ) {
+0000000|                                                        T = itemUnderMouse;
+0000000|                                                        drawSelect(T);
+       |                                                }
+0000000|                                        } while( mouseEvent( event, evMouseMove ) );
+       |
+0000000|                                        if( T !is null && commandEnabled(T.command) ) {
+0000000|                                                event.what = evCommand;
+0000000|                                                event.message.command = T.command;
+0000000|                                                event.message.infoPtr = null;
+0000000|                                                putEvent(event);
+       |                                        }
+0000000|                                        clearEvent(event);
+0000000|                                        drawView();
+0000000|                                        break;
+       |                                }
+0000000|                        case evKeyDown: 
+0000000|                                foreach(ref T; items) {
+0000000|                                        bool hotKey = T.keyCode != KeyCode.kbNoKey && event.keyDown.keyCode ==  T.keyCode;
+0000000|                                        if( hotKey && commandEnabled(T.command)) {
+0000000|                                                event.what = evCommand;
+0000000|                                                event.message.command = T.command;
+0000000|                                                event.message.infoPtr = null;
+0000000|                                                return;
+       |                                        }
+       |                                }
+0000000|                                break;
+0000000|                        case evBroadcast:
+0000000|                                if( event.message.command == cm.CommandSetChanged )
+0000000|                                        drawView();
+0000000|                                break;
+0000000|                        default:
+0000000|                                break;
+       |        }
+       |        }
+       |
+       |        string hint( int ) {
+0000000|                return "";
+       |        }
+       |
+       |        void update() {
+0000000|                TView p = TopView();
+0000000|                int h = ( p !is null ) ? p.getHelpCtx() : hcNoContext;
+0000000|                if( helpCtx != h ) {
+0000000|                        helpCtx = h;
+0000000|                        findItems();
+0000000|                        drawView();
+       |        }
+       |        }
+       |}
+tstatusline.d is 0% covered

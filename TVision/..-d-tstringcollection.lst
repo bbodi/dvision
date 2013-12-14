@@ -1,0 +1,57 @@
+       |module tstringcollection;
+       |
+       |import std.stream;
+       |import std.string;
+       |import std.algorithm;
+       |
+       |import tsortedcollection;
+       |import ttypes;
+       |import tstreamable;
+       |import configfile;
+       |
+       |class TStringCollection : TSortedCollection!string {
+       |
+0000000|        this(ccIndex aLimit, ccIndex aDelta) {
+0000000|                super(aLimit, aDelta);
+       |        }
+       |
+0000000|        this(Elem* inStream) {
+0000000|                super(inStream);
+       |        }
+       |
+       |
+       |        static bool compare(in string key1, in string key2) {
+0000000|                return icmp( key1, key2 ) < 0;
+       |        }
+       |
+       |        override void sort() {
+0000000|                items.sort!compare();
+       |        }
+       |
+       |        override void freeItem( string item ) {
+       |            //delete[] (char *)item;
+       |        }
+       |
+       |
+       |        override void writeItem( in string obj, OutputStream os ) {
+0000000|            os.write(cast(ubyte[])obj);
+       |        }
+       |
+       |        override string readItem( InputStream inputStream ) {
+0000000|                ubyte[] str;
+0000000|        inputStream.read(str);
+0000000|        return cast(string)str;
+       |        }
+       |
+       |        //TStringCollection operator = (in TStringCollection pl)         {
+       |        TStringCollection fillBy(TStringCollection pl)   {
+0000000|          int i;
+0000000|          duplicates = pl.duplicates;
+0000000|          freeAll();
+0000000|          for (i=0;i<pl.count;i++) {
+0000000|            insert(pl.items[i]);
+       |          }
+0000000|          return this;
+       |        }
+       |}
+..\d\tstringcollection.d is 0% covered

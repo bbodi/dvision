@@ -1,0 +1,810 @@
+       |module tmenu;
+       |
+       |import std.uni;
+       |import std.string : indexOf;
+       |import std.algorithm : max, canFind, min, count;
+       |
+       |import tview;
+       |import ttypes;
+       |
+       |private const ubyte[] cpMenuView = cast(ubyte[])"\x02\x03\x04\x05\x06\x07";
+       |private immutable TPalette palette = immutable TPalette( cpMenuView );
+       |
+       |//" ÚÄ¿  ÀÄÙ  ³ ³  ÃÄ´ " 8
+       |//static string frameChars =  " \332\304\277  \300\304\331  \263 \263  \303\304\264 ";
+       |//static string oframeChars = " \332\304\277  \300\304\331  \263 \263  \303\304\264 ";
+       |// ┌─┐  └─┘  │ │  ├─┤ 
+       |private immutable wstring frameChars =  cast(wstring)[32, 0x250C, 0x2500,0x2510, // " ┌─┐"
+       |32, 32, 0x2514, 0x2500, 0x2518, 32, 32, // "  └─┘  "
+       |0x2502, 32, 0x2502, 32, 32, // "│ │ " 
+       |0x251C, 0x2500, 0x2524, 32]; // "├─┤ "
+       |private immutable char rightArrow = 16;
+       |
+       |struct TMenu {
+       |
+       |        private TMenuItem items;
+       |    private TMenuItem defaults;
+       |
+0000000|        this(TMenuItem itemList) {
+0000000|                items = defaults = itemList;
+       |        }
+       |
+0000000|        this(TMenuItem itemList, TMenuItem defList) {
+0000000|                items = itemList;
+0000000|                defaults = defList;
+       |        }
+       |
+       |}
+       |
+       |class TMenuItem {
+       |
+       |        private string name;
+       |    private Command command;
+       |    private KeyCode keyCode;
+       |    private int helpCtx;
+       |   
+       |        private union {
+       |        string param;
+       |        TMenu* subMenu;
+       |        };
+       |        private TMenuItem next;
+       |
+       |        private bool disabled;
+       |
+      1|        this(string aName, Command aCommand, KeyCode aKeyCode, int aHelpCtx, string p = null, TMenuItem aNext = null ) {
+      1|            this.name = aName;
+      1|            this.command = aCommand;
+      1|            this.disabled = !TView.commandEnabled(aCommand);
+      1|            this.keyCode = aKeyCode;
+      1|                this.helpCtx = aHelpCtx;
+      1|            this.param = p;
+      1|            this.next = aNext;
+       |        }
+       |
+0000000|        this(string aName, KeyCode aKeyCode, TMenu *aSubMenu, int aHelpCtx) {
+0000000|            this.name = aName;
+0000000|            this.disabled = !TView.commandEnabled(command);
+0000000|            this.keyCode = aKeyCode;
+0000000|                this.helpCtx = aHelpCtx;
+0000000|            this.subMenu = aSubMenu;
+       |        }
+       |
+       |
+       |        ref TMenuItem opBinary(string op)(in ref TMenuItem rhs) const if (op == "+") {
+       |                TMenuItem result = this;
+       |                result.append(rhs);
+       |                return result;
+       |        }
+       |
+       |        void opOpAssign(string op)(in ref TPoint rhs) if (op == "+="){
+       |                append(rhs);
+       |        }
+       |
+       |        static TMenuItem newLine() {
+0000000|        return new TMenuItem( null, cm.Valid, KeyCode.kbNoKey, hcNoContext, null, null );
+       |        }
+       |
+       |        void append( TMenuItem aNext ) {
+0000000|        TMenuItem item = this;
+0000000|        for ( ; item.next; item = item.next ) {
+0000000|                item.next = aNext;
+       |        }
+       |        }
+       |}
+       |
+       |abstract class TMenuView : TView {
+       |        // SET: Looks like some users really likes the original behavior of
+       |    // having 1 space around menu items. As it reduces the number of menues
+       |    // we can have. I added a conditional way to control it. The code is in
+       |    // TMenuBar, when you create a menu bar (or chanBounds it) the Bar
+       |    // calculates the length of the items and if they are greater than size.x
+       |    // enters in the compatMenu mode. "Norberto Alfredo Bensa (Beto)"
+       |    // <norberto.bensa@abaconet.com.ar> sent me an uncoditional patch that I used
+       |    // as base. This variable is 0 by default (TMenuView constructor)
+       |    byte compactMenu;
+       |
+       |    protected TMenuView parentMenu;
+       |    protected TMenu *menu;
+       |    protected TMenuItem current;
+       |
+0000000|        this( in TRect bounds, TMenu *aMenu = null, TMenuView aParent = null) {
+0000000|                super(bounds);
+0000000|                parentMenu = aParent;
+0000000|                menu = aMenu;
+0000000|                eventMask |= evBroadcast;
+       |        }
+       |
+       |    void trackMouse( in TEvent e ) {
+0000000|        TPoint mouse = makeLocal( e.mouse.where );
+0000000|        for( current = menu.items; current !is null; current = current.next ) {
+0000000|                TRect r = getItemRect( current );
+0000000|                if( r.contains(mouse) ) {
+0000000|                return;
+       |                        }
+       |        }
+       |        }
+       |
+       |        void nextItem() {
+0000000|        if( (current = current.next) is null ) {
+0000000|                current = menu.items;
+       |                }
+       |        }
+       |
+       |        void prevItem() {
+0000000|        TMenuItem p;
+       |
+0000000|        if( (p = current) == menu.items) {
+0000000|                p = null;
+       |                }
+       |
+       |        do  {
+0000000|                nextItem();
+0000000|        } while( current.next != p );
+       |        }
+       |
+       |        void trackKey( bool findNext ) {
+0000000|        if( current is null )
+0000000|                return;
+       |
+       |            do  {
+0000000|                if( findNext )
+0000000|                    nextItem();
+       |                else
+0000000|                    prevItem();
+0000000|                } while( current.name is null );
+       |        }
+       |
+       |        bool mouseInOwner( ref TEvent e )
+       |        {
+0000000|            if( parentMenu is null || parentMenu.size.y != 1 )
+0000000|                return false;
+       |            else {
+0000000|                TPoint mouse = parentMenu.makeLocal( e.mouse.where );
+0000000|                TRect r = parentMenu.getItemRect( parentMenu.current );
+0000000|                return r.contains( mouse );
+       |                }
+       |        }
+       |
+       |        bool mouseInMenus( ref TEvent e )
+       |        {
+0000000|            TMenuView p = parentMenu;
+0000000|            while( p !is null && !p.mouseInView(e.mouse.where) )
+0000000|                p = p.parentMenu;
+       |
+0000000|            return  p !is null;
+       |        }
+       |
+       |        TMenuView topMenu() {
+0000000|            TMenuView p = this;
+0000000|            while( p.parentMenu !is null )
+0000000|                p = p.parentMenu;
+0000000|            return p;
+       |        }
+       |
+       |        enum MenuAction { doNothing, doSelect, doReturn };
+       |
+       |        override Command execute() {
+0000000|            bool    autoSelect = false;
+0000000|            char   ch;
+0000000|            int    withAlt;
+0000000|            Command result;
+0000000|            TMenuItem itemShown;
+0000000|            TMenuItem p;
+       |
+0000000|            this.current = menu.defaults ? menu.defaults : null;
+0000000|                TEvent e;
+0000000|                MenuAction action;
+       |            do  {
+0000000|                action = MenuAction.doNothing;
+0000000|                getEvent(e);
+0000000|                switch (e.what) {
+0000000|                    case  evMouseDown:
+0000000|                        if( mouseInView(e.mouse.where) || mouseInOwner(e) ) {
+0000000|                            trackMouse(e);
+0000000|                            if( size.y == 1 ) {
+0000000|                                autoSelect = true;
+       |                                                }
+       |                                        } else {
+0000000|                            action =  MenuAction.doReturn;
+       |                                        }
+0000000|                        break;
+0000000|                    case  evMouseUp:
+0000000|                        trackMouse(e);
+0000000|                        if( mouseInOwner(e) ) {
+0000000|                            current = menu.defaults;
+0000000|                        } else if( current !is null && current.name !is null ) {
+0000000|                            action = MenuAction.doSelect;
+       |                        } else {
+0000000|                            action = MenuAction.doReturn;
+       |                                        }
+0000000|                        break;
+0000000|                    case  evMouseMove:
+0000000|                        if( e.mouse.buttons != 0 ) {
+0000000|                            trackMouse(e);
+0000000|                            if( !(mouseInView(e.mouse.where) || mouseInOwner(e)) && mouseInMenus(e) ) {
+0000000|                                action = MenuAction.doReturn;
+       |                                                }
+       |                                        }
+0000000|                        break;
+0000000|                    case  evKeyDown:
+0000000|                        switch( ctrlToArrow(e.keyDown.keyCode) ) {
+0000000|                            case  KeyCode.kbUp:
+0000000|                            case  KeyCode.kbDown:
+0000000|                                if( size.y != 1 ) {
+0000000|                                    trackKey(ctrlToArrow(e.keyDown.keyCode) == KeyCode.kbDown);
+0000000|                                                        } else if( e.keyDown.keyCode == KeyCode.kbDown ) {
+0000000|                                    autoSelect =  true;
+       |                                                        }
+0000000|                                break;
+0000000|                            case  KeyCode.kbLeft:
+0000000|                            case  KeyCode.kbRight:
+0000000|                                if( parentMenu is null ) {
+0000000|                                    trackKey(ctrlToArrow(e.keyDown.keyCode) == KeyCode.kbRight);
+       |                                } else {
+0000000|                                    action =  MenuAction.doReturn;
+       |                                                        }
+0000000|                                break;
+0000000|                            case  KeyCode.kbHome:
+0000000|                            case  KeyCode.kbEnd:
+0000000|                                if( size.y != 1 ) {
+0000000|                                    current = menu.items;
+0000000|                                    if( e.keyDown.keyCode == KeyCode.kbEnd ) {
+0000000|                                        trackKey(false);
+       |                                                                }
+       |                                                        }
+0000000|                                break;
+0000000|                            case  KeyCode.kbEnter:
+0000000|                                if( size.y == 1 ) {
+0000000|                                    autoSelect =  true;
+       |                                                        }
+0000000|                                action = MenuAction.doSelect;
+0000000|                                break;
+0000000|                            case  KeyCode.kbEsc:
+0000000|                                action = MenuAction.doReturn;
+0000000|                                if( parentMenu is null || parentMenu.size.y != 1 ) {
+0000000|                                    clearEvent(e);
+       |                                                        }
+0000000|                                break;
+0000000|                            default:
+0000000|                                TMenuView target = this;
+0000000|                                ch = TGKey.GetAltChar(e.keyDown.keyCode, e.keyDown.charScan.charCode);
+0000000|                                withAlt = e.keyDown.keyCode & (KeyCode.kbAltRCode | KeyCode.kbAltLCode);
+0000000|                                if( ch == 0 ) {
+0000000|                                    ch = e.keyDown.charScan.charCode;
+       |                                                        }
+0000000|                                if( withAlt ) {// SET: Original behavior
+0000000|                                    if( ch ) {
+0000000|                                        target = topMenu();
+       |                                                                }
+0000000|                                    p = target.findItem(ch);
+       |                                } else {
+0000000|                                    p = target.findItem(ch);
+0000000|                                    if( p is null ) {
+0000000|                                        target = topMenu();
+0000000|                                        p = target.findItem(ch);
+       |                                    }
+       |                                                        }
+0000000|                                if( p is null ) {
+0000000|                                    p = topMenu().hotKey(e.keyDown.keyCode);
+0000000|                                    if( p !is null && commandEnabled(p.command) ) {
+0000000|                                        result = p.command;
+0000000|                                        action = MenuAction.doReturn;
+       |                                                                }
+0000000|                                                        } else if( target == this ) {
+0000000|                                    if( size.y == 1 ) {
+0000000|                                        autoSelect = true;
+       |                                                                }
+0000000|                                    action = MenuAction.doSelect;
+0000000|                                    current = p;
+0000000|                                                        } else if( parentMenu != target || parentMenu.current != p ) {
+0000000|                                                                action = MenuAction.doReturn;
+       |                                                        }
+       |                            }
+0000000|                        break;
+0000000|                    case  evCommand:
+0000000|                        if( e.message.command == cm.Menu ) {
+0000000|                            autoSelect = false;
+0000000|                            if (parentMenu !is null ) {
+0000000|                                action = MenuAction.doReturn;
+       |                                                }
+       |                                        } else {
+0000000|                            action = MenuAction.doReturn;
+       |                                        }
+0000000|                        break;
+0000000|                                default:
+0000000|                                                break;
+       |                    }
+       |
+0000000|                if( itemShown !is current ) {
+0000000|                    itemShown =  current;
+0000000|                    drawView();
+       |                        }
+       |
+0000000|                if( (action == MenuAction.doSelect || (action == MenuAction.doNothing && autoSelect)) &&
+0000000|                    current !is null &&
+0000000|                    current.name !is null )  {
+0000000|                                if( current.command == cm.Null ) {
+0000000|                                        if( (e.what & (evMouseDown | evMouseMove)) != 0 ) {
+0000000|                                                putEvent(e);
+       |                                        }
+0000000|                        TRect r = getItemRect( current );
+0000000|                        r.a.x = r.a.x + origin.x;
+0000000|                        r.a.y = r.b.y + origin.y;
+0000000|                        r.b = owner.size;
+0000000|                        if( compactMenu && size.y == 1 ) {
+0000000|                                                r.a.x--;
+       |                                        }
+0000000|                        TView target = topMenu().newSubView(r, current.subMenu, this);
+0000000|                        result = owner.execView(target);
+0000000|                        CLY_destroy( target );
+0000000|                                } else if( action == MenuAction.doSelect ) {
+0000000|                                        result = current.command;
+       |                                }
+       |                        }
+       |
+0000000|                if( result != cm.Null && commandEnabled(result) ) {
+0000000|                    action =  MenuAction.doReturn;
+0000000|                    clearEvent(e);
+       |                        } else {
+0000000|                    result = cm.Valid; // 0
+       |                        }
+0000000|                } while( action != MenuAction.doReturn );
+       |
+0000000|            if( e.what != evNothing && (parentMenu !is null || e.what == evCommand)) {
+0000000|                    putEvent(e);
+       |                }
+0000000|            if (current !is null) {
+0000000|                menu.defaults = current;
+0000000|                current = null;
+0000000|                drawView();
+       |                }
+0000000|            return result;
+       |        }
+       |
+       |        TMenuItem findItem( dchar ch ) {
+0000000|            if( !ch ) return null;
+       |            //ch = TVCodePage.toUpper(ch);
+0000000|                ch = toUpper(ch);
+0000000|            TMenuItem p = menu.items;
+0000000|            while( p !is null ) {
+0000000|                if( p.name !is null && !p.disabled ) {
+0000000|                                int index  = p.name.indexOf("~");
+0000000|                                bool shortcutPressed = index != -1 && toUpper(p.name[index+1]) == ch; // TGKey.CompareASCII(ch, TVCodePage.toUpper(p.name[index+1]))
+0000000|                    if( shortcutPressed) {
+0000000|                        return p;
+       |                                }
+       |                        }
+0000000|                        p =  p.next;
+       |                }
+0000000|            return null;
+       |        }
+       |
+       |        TRect getItemRect( TMenuItem  ) {
+0000000|            return TRect( 0, 0, 0, 0 );
+       |        }
+       |
+       |        override int getHelpCtx() const {
+       |                
+0000000|                const(TMenuView) findFirstHelpContext(in TMenuView c) {
+0000000|                        if (c is null ||
+0000000|                                (c.current !is null &&
+0000000|                                 c.current.helpCtx != hcNoContext &&
+0000000|                                        c.current.name !is null )
+       |                                ) {
+0000000|                                        return c;
+       |                                }
+0000000|                        return findFirstHelpContext(c.parentMenu);
+       |                }
+0000000|            const TMenuView c = findFirstHelpContext(this);
+       |
+0000000|            if( c !is null )
+0000000|                return c.current.helpCtx;
+       |            else
+0000000|                return hcNoContext;
+       |        }
+       |
+       |        override ref immutable(TPalette) getPalette() const {
+0000000|            return palette;
+       |        }
+       |
+       |        bool updateMenu( TMenu *menu ) {
+0000000|            if (!menu) return false;
+0000000|            bool res = false;
+0000000|            for( TMenuItem p = menu.items; p !is null; p = p.next ) {
+0000000|                if( p.name !is null ) {
+0000000|                    if( p.command == cm.Null ) {
+0000000|                        if (updateMenu(p.subMenu) == true) {
+0000000|                            res = true;
+       |                                        }
+       |                                } else {
+0000000|                        bool commandState = commandEnabled(p.command);
+0000000|                        if( p.disabled == commandState ) {
+0000000|                            p.disabled = !commandState;
+0000000|                            res = true;
+       |                                        }
+       |                                }
+       |                        }
+       |                }
+0000000|            return res;
+       |        }
+       |
+       |        void do_a_select( ref TEvent event ) {
+0000000|            putEvent( event );
+0000000|            event.message.command = owner.execView(this);
+0000000|            if( event.message.command != cm.Null && commandEnabled(event.message.command) ) {
+0000000|                event.what = evCommand;
+0000000|                event.message.infoPtr = cast(void*)0;
+0000000|                putEvent(event);
+       |                }
+0000000|            clearEvent(event);
+       |        }
+       |
+       |        /**[txh]********************************************************************
+       |
+       |          Description:
+       |          This is the code to look-up an item from a key. Used by handleEvent.
+       |          
+       |          Return: true if the item was found.
+       |          
+       |        ***************************************************************************/
+       |
+       |        bool keyToItem(ref TEvent event) {
+0000000|                auto ch = TGKey.GetAltChar(event.keyDown.keyCode, event.keyDown.charScan.charCode);
+0000000|                if ( findItem(ch) ) {
+0000000|                        putEvent(event);
+0000000|                        do_a_select(event);
+0000000|                        return true;
+       |                }
+0000000|                return false;
+       |        }
+       |
+       |        /**[txh]********************************************************************
+       |
+       |          Description:
+       |          This is the code to look-up a short cut from a key. Used by handleEvent.
+       |          
+       |          Return: true if the item was found.
+       |          
+       |        ***************************************************************************/
+       |
+       |        bool keyToHotKey(ref TEvent event) {
+0000000|                TMenuItem p = hotKey(event.keyDown.keyCode);
+0000000|                if (p && commandEnabled(p.command)) {
+0000000|                        event.what=evCommand;
+0000000|                        event.message.command = p.command;
+0000000|                        event.message.infoPtr = cast(void*)0;
+0000000|                        putEvent(event);
+0000000|                        clearEvent(event);
+       |                }
+0000000|                return p ? true : false;
+       |        }
+       |
+       |        override void handleEvent( ref TEvent event ) { 
+0000000|                if( menu !is null )
+0000000|                switch (event.what) {
+0000000|                        case  evMouseDown:
+0000000|                                do_a_select(event);
+0000000|                                break;
+0000000|                        case  evKeyDown:
+0000000|                                if(! keyToItem(event) )
+0000000|                                        keyToHotKey(event);
+0000000|                                        break;
+0000000|                        case  evCommand:
+0000000|                                if( event.message.command == cm.Menu )
+0000000|                                        do_a_select(event);
+0000000|                                break;
+0000000|                        case  evBroadcast:
+0000000|                                if( event.message.command == cm.CommandSetChanged ) {
+0000000|                                        if( updateMenu(menu) ) {
+0000000|                                                drawView();
+       |                                        }
+       |                                }
+0000000|                                break;
+0000000|                        default:
+0000000|                                break;
+       |                }
+       |        }
+       |
+       |
+       |        TMenuItem findHotKey( TMenuItem p, KeyCode keyCode ) {
+0000000|            while( p !is null ) {
+0000000|                if( p.name !is null ) {
+0000000|                    if( p.command == cm.Null ) {
+0000000|                        TMenuItem T;
+0000000|                        if( (T = findHotKey( p.subMenu.items, keyCode )) !is null )
+0000000|                            return T;
+0000000|                                } else if( !p.disabled && p.keyCode != KeyCode.kbNoKey && p.keyCode == keyCode)
+0000000|                        return p;
+       |                    }
+0000000|                        p =  p.next;
+       |                }
+0000000|            return null;
+       |        }
+       |
+       |        TMenuItem hotKey( KeyCode keyCode ) {
+0000000|            return findHotKey( menu.items, keyCode );
+       |        }
+       |
+       |        TMenuView newSubView( in TRect bounds, TMenu *aMenu, TMenuView aParentMenu ) {
+0000000|            return new TMenuBox( bounds, aMenu, aParentMenu );
+       |        }
+       |}
+       |
+       |class TMenuBox : TMenuView {
+       |
+       |        static TRect getRect( in TRect bounds, TMenu *aMenu ) {
+0000000|                int w =  10;
+0000000|                int h =  2;
+0000000|                if( aMenu !is null ) {
+0000000|                        for( TMenuItem p = aMenu.items; p !is null; p = p.next ) {
+0000000|                                if( p.name !is null ) {
+0000000|                                        int len = p.name.length + 6;
+0000000|                                        if( p.command == cm.Null )
+0000000|                                                len += 3;
+       |                                        else
+0000000|                                                if( p.param !is null )
+0000000|                                                        len += p.param.length + 2;
+0000000|                                        w = max( len, w );
+       |                }
+0000000|                                h++;
+       |            }
+       |        }
+       |
+0000000|                TRect r =  bounds;
+       |
+0000000|                if( r.a.x + w < r.b.x ) {
+0000000|                        r.b.x = r.a.x + w;
+       |                } else {
+0000000|                        r.a.x = r.b.x - w;
+       |                }
+       |
+0000000|                if (r.a.y + h < r.b.y) {
+0000000|                        r.b.y = r.a.y + h;
+       |                } else {
+0000000|                        r.a.y = r.b.y - h;
+       |                }
+0000000|                return r;
+       |        }
+       |
+0000000|        this( in TRect bounds, TMenu *aMenu, TMenuView aParentMenu) {
+0000000|                super(getRect(bounds, aMenu), aMenu, aParentMenu);
+0000000|                state |= sfShadow;
+       |                // This class can be "Braille friendly"
+0000000|                if (TScreen.getShowCursorEver())
+0000000|                        state |= sfCursorVis;
+0000000|                options |= ofPreProcess;
+       |        }
+       |
+       |        static ushort cNormal, color;
+       |
+       |        void frameLine( ref TDrawBuffer b, short n ) {
+0000000|                b.moveBuf( 0, frameChars[n..$], cNormal, 2 );
+0000000|                b.moveChar( 2, frameChars[n+2], color, size.x - 4 );
+0000000|                b.moveBuf( size.x - 2, frameChars[n+3..$], cNormal, 2 );
+       |        }
+       |
+       |        override void draw() {
+0000000|                auto b = new TDrawBuffer;
+0000000|                cNormal = getColor(0x0301);
+0000000|                ushort cSelect = getColor(0x0604);
+0000000|                ushort cNormDisabled = getColor(0x0202);
+0000000|                ushort cSelDisabled = getColor(0x0505);
+0000000|                int y=0, yCur=-1;
+0000000|                color =  cNormal;
+0000000|                frameLine( *b, 0 );
+0000000|                writeBuf( 0, y++, size.x, 1, *b );
+0000000|                if( menu !is null ) {
+0000000|                        for( TMenuItem p = menu.items; p !is null; p = p.next ) {
+0000000|                                color = cNormal;
+0000000|                                if( p.name is null )
+0000000|                                        frameLine( *b, 15 );
+       |                                else {
+0000000|                                        if( p.disabled ) {
+0000000|                                                if( p is  current ) {
+0000000|                                                        color = cSelDisabled;
+0000000|                                                        yCur = y;
+       |                        } else {
+0000000|                                                        color = cNormDisabled;
+       |                                                }
+0000000|                                        } else if( p is current ) {
+0000000|                                                color = cSelect;
+0000000|                                                yCur = y;
+       |                    }
+0000000|                                        frameLine( *b, 10 );
+0000000|                                        b.moveCStr( 3, p.name, color );
+0000000|                                        if( p.command == cm.Null ) {
+0000000|                                                b.putChar( size.x-4, rightArrow );
+0000000|                                        } else if( p.param !is null ) {
+0000000|                                                b.moveStr( size.x - 3 - p.param.length, p.param, color);
+       |                                        }
+       |                }
+0000000|                                writeBuf( 0, y++, size.x, 1, *b );
+       |            }
+       |        }
+0000000|                color = cNormal;
+0000000|                frameLine( *b, 5 );
+0000000|                writeBuf( 0, y++, size.x, 1, *b );
+       |                // SET: Force a cursor movement to indicate which one is selected.
+       |                // This helps Braille Terminals, but the cursor must be visible!
+0000000|                if( yCur != -1 ) {
+0000000|                        setCursor( 2 , yCur );
+0000000|                        resetCursor();
+       |        }
+       |        }
+       |
+       |        override TRect getItemRect( TMenuItem item ) {
+0000000|                short  y = 1;
+0000000|                TMenuItem p = menu.items;
+       |
+0000000|                while( p != item ) {
+0000000|                        y++;
+0000000|                        p =  p.next;
+       |        }
+0000000|                return TRect( 2, y, size.x-2, y+1 );
+       |        }
+       |}
+       |
+       |class TMenuBar : TMenuView {
+       |
+0000000|        this( in TRect bounds, TMenu *aMenu ) {
+0000000|                super(bounds);
+0000000|                menu = aMenu;
+0000000|                growMode = gfGrowHiX;
+0000000|                options |= ofPreProcess;
+0000000|                computeLength();
+       |                // This class can be "Braille friendly"
+0000000|                if (TScreen.getShowCursorEver())
+0000000|                        state |= sfCursorVis;
+       |        }
+       |
+0000000|        this( in TRect bounds, TSubMenu aMenu ) {
+0000000|                this(bounds, new TMenu( aMenu ));
+       |        }
+       |
+       |
+       |        /**[txh]********************************************************************
+       |
+       |        Description:
+       |        This routine computes the length of the menu bar, if that's greater than
+       |        the size.x the menu becomes compacted to allow more options.@*
+       |        Added by SET.
+       |
+       |        ***************************************************************************/
+       |
+       |        void computeLength() {
+0000000|                int l = 0;
+0000000|                TMenuItem p;
+       |
+0000000|                if( menu !is null ) {
+0000000|                        p = menu.items;
+0000000|                        while( p !is null ) {
+0000000|                                if( p.name !is null ) {
+0000000|                                        l += p.name.length + 2;
+       |                                }
+0000000|                                p = p.next;
+       |            }
+       |        }
+0000000|                compactMenu = l > size.x;
+       |        }
+       |
+       |        /**[txh]********************************************************************
+       |
+       |        Description:
+       |        Calls TMenuView::changeBounds, additionally re-computes the length of the
+       |        bar to select the no/compact mode.@*
+       |        Added by SET.
+       |
+       |        ***************************************************************************/
+       |
+       |        override void changeBounds(in TRect bounds) {
+0000000|                TMenuView.changeBounds(bounds);
+0000000|                int oldCompact = compactMenu;
+0000000|                computeLength();
+0000000|                if (compactMenu != oldCompact)
+0000000|                        draw();
+       |        }
+       |
+       |        override void draw() {
+0000000|                ushort color;
+0000000|                int x, l, inc, xSel=-1;
+0000000|                TMenuItem p;
+       |
+0000000|                ushort cNormal = getColor(0x0301);
+0000000|                ushort cSelect = getColor(0x0604);
+0000000|                ushort cNormDisabled =  getColor(0x0202);
+0000000|                ushort cSelDisabled =  getColor(0x0505);
+0000000|                auto b = new TDrawBuffer;
+0000000|                b.moveChar( 0, ' ', cNormal, size.x );
+0000000|                inc = (compactMenu ? 1 : 2); // SET
+0000000|                if( menu !is null ) {
+0000000|                        x = 0;
+0000000|                        p = menu.items;
+0000000|                        while( p !is null ) {
+0000000|                                if( p.name !is null ) {
+0000000|                                        l = p.name.lenWithoutTides;
+0000000|                                        if( x + l < size.x ) {
+0000000|                                                if( p.disabled ) {
+0000000|                                                        if( p is current ) {
+0000000|                                                                xSel = x;
+0000000|                                                                color = cSelDisabled;
+       |                            }
+       |                                                        else {
+0000000|                                                                color = cNormDisabled;
+       |                                                        }
+       |                                                } else {
+0000000|                                                        if( p is current ) {
+0000000|                                                                xSel = x;
+0000000|                                                                color = cSelect;
+       |                            }
+       |                                                        else {
+0000000|                                                                color = cNormal;
+       |                                                        }
+       |                                                }
+0000000|                                                b.moveChar( x, ' ', color, 1 );
+0000000|                                                b.moveCStr( x+1, p.name, color );
+0000000|                                                b.moveChar( x+l+1, ' ', color, 1 );
+       |                    }
+0000000|                                        x += l + inc;
+       |                }
+0000000|                                p = p.next;
+       |            }
+       |        }
+0000000|                writeBuf( 0, 0, size.x, 1, *b );
+0000000|                if( xSel != -1 ) {
+0000000|                        setCursor( xSel , 0 );
+0000000|                        resetCursor();
+       |        }
+       |        }
+       |
+       |        override TRect getItemRect( TMenuItem item ) {
+0000000|                int y = compactMenu ? 1 : 0; // SET
+0000000|                TRect r = TRect(y, 0, y, 1);
+0000000|                y = compactMenu ? 1 : 2; // SET
+0000000|                TMenuItem p = menu.items;
+0000000|                while( p ) {
+0000000|                        r.a.x = r.b.x;
+0000000|                        if( p.name !is null )
+0000000|                                r.b.x += p.name.length + y;
+0000000|                        if( p is item )
+0000000|                                return r;
+0000000|                        p = p.next;
+       |        }
+0000000|                return TRect(0, 0, 0, 0); // SAA: should not ever happen
+       |        }
+       |}
+       |
+       |class TSubMenu : TMenuItem {
+      1|        this( string name, KeyCode key, ushort helpCtx = hcNoContext ) {
+      1|                super(name, cm.Valid, key, helpCtx);
+       |        }
+       |
+       |        unittest {
+      1|                assert((new TSubMenu("Test", KeyCode.kbAltF)).command == cm.Null);
+       |        }
+       |
+       |        void add(TMenuItem rhs) {
+0000000|                TSubMenu sub = this;
+0000000|                while( sub.next !is null ) {
+0000000|                        sub = cast(TSubMenu)(sub.next);
+       |                }
+       |
+0000000|                if( sub.subMenu is null ) {
+0000000|                        sub.subMenu = new TMenu( rhs );
+       |                } else {
+0000000|                        TMenuItem cur = sub.subMenu.items;
+0000000|                        while( cur.next !is null ) {
+0000000|                                cur = cur.next;
+       |                        }
+0000000|                        cur.next = rhs;
+       |        }
+       |        }
+       |
+       |        void add(TSubMenu rhs) {
+0000000|                TMenuItem cur = this;
+0000000|                while( cur.next !is null ) {
+0000000|                        cur = cur.next;
+       |                }
+0000000|                cur.next = rhs;
+       |        }
+       |}
+..\d\tmenu.d is 2% covered

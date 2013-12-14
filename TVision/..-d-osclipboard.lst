@@ -1,0 +1,22 @@
+       |module osclipboard;
+       |
+       |struct TVOSClipboard {
+       |
+       |        static string name = "None";
+       |        static int available;
+       |        static int error;
+       |        static int errors;
+       |        static string[] nameErrors;
+       |        static int function(int id, in char[] buffer) copy;
+       |        static string function(int id) paste;
+       |        static void  function() destroy;
+       |
+0000000|        ~this() { if (destroy) destroy(); };
+       |
+0000000|        static string getName() { return name; };
+0000000|        static int     isAvailable() { return available; };
+       |
+0000000|        static void    clearError() { error=0; };
+       |}
+       |
+..\d\osclipboard.d is 0% covered

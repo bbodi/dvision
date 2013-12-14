@@ -1,0 +1,555 @@
+       |module win32.win32scr;
+       |
+       |import std.string;
+       |import core.sys.windows.windows;
+       |import std.process;
+       |
+       |import tscreen;
+       |import tdisplay;
+       |import codepage;
+       |import tvconfig;
+       |import ttypes;
+       |import win32.win32key;
+       |import win32.win32clip;
+       |import win32.win32mouse;
+       |
+       |
+       |TScreen TV_Win32DriverCheck() {
+0000000|        TScreenWin32 drv = new TScreenWin32();
+0000000|        if (!TScreen.initialized) {
+0000000|                return null;
+       |        }
+0000000|        return drv;
+       |}
+       |
+       |alias void* winHandle;
+       |extern (Windows) winHandle CreateThread(int, int, int, int, int, int);
+       |        
+       |
+       |__gshared HANDLE hOut, hIn;
+       |__gshared int ExitEventThread;
+       |
+       |// Lock for the WindowSizeChanged variable
+       |private __gshared CRITICAL_SECTION lockWindowSizeChanged;
+       |// Used to indicate a window size change
+       |private __gshared int WindowSizeChanged;
+       |
+       |class TScreenWin32 : TScreen {
+       |
+       |        static CONSOLE_SCREEN_BUFFER_INFO info;
+       |        
+       |        static HANDLE                     EventThreadHandle;
+       |        static DWORD                      oldConsoleMode, newConsoleMode;
+       |        static uint                   xCurStart, yCurStart;
+       |        static uint                   saveScreenWidth, saveScreenHeight;
+       |
+       |        private const int mxTitleSize=256;
+       |        // Variables for this driver
+       |        // Input/output handles
+       |        private static HANDLE hStdOut;
+       |        // Console information
+       |        private static CONSOLE_SCREEN_BUFFER_INFO ConsoleInfo;
+       |        // Cursor information
+       |        private static CONSOLE_CURSOR_INFO ConsoleCursorInfo;
+       |        
+       |        static void SetCursorPos(uint x, uint y)
+       |        {
+0000000|                COORD pos;
+0000000|                pos.X = cast(ushort)x;
+0000000|                pos.Y = cast(ushort)y;
+0000000|                SetConsoleCursorPosition(hOut,pos);
+       |        }
+       |        
+       |        static void GetCursorPos(out uint x, out uint y)
+       |        {
+0000000|                GetConsoleScreenBufferInfo(hOut, &ConsoleInfo);
+0000000|                x=ConsoleInfo.dwCursorPosition.X;
+0000000|                y=ConsoleInfo.dwCursorPosition.Y;
+       |        }
+       |        
+       |        // by SET
+       |        static void GetCursorShape(out uint start, out uint end)
+       |        {
+0000000|                GetConsoleCursorInfo(hOut,&ConsoleCursorInfo);
+0000000|                if (ConsoleCursorInfo.bVisible)
+       |                {// Visible
+       |                        // Win32API returns a "percent filled" value.
+0000000|                        start=100-ConsoleCursorInfo.dwSize;
+       |                        // Ever upto the end
+0000000|                        end  =100;
+0000000|                        return;
+       |                }
+       |                // Invisible cursor
+0000000|                start=end=0;
+       |        }
+       |        
+       |        // by SET
+       |        static void SetCursorShape(uint start, uint end)
+       |        {
+0000000|                if (start>=end && TScreen.getShowCursorEver())
+0000000|                        return;
+       |                
+0000000|                GetConsoleCursorInfo(hOut,&ConsoleCursorInfo);
+0000000|                if (start>=end)
+0000000|                        ConsoleCursorInfo.bVisible=FALSE;
+       |                else
+       |                {
+0000000|                        ConsoleCursorInfo.bVisible=true;
+0000000|                        ConsoleCursorInfo.dwSize=end-start;
+0000000|                        if (ConsoleCursorInfo.dwSize>=100)
+0000000|                                ConsoleCursorInfo.dwSize=99;
+       |                }
+0000000|                SetConsoleCursorInfo(hOut,&ConsoleCursorInfo);
+       |        }
+       |        
+       |        static ushort GetRows()
+       |        {
+0000000|                return ConsoleInfo.dwSize.Y;
+       |        }
+       |        
+       |        static ushort GetCols()
+       |        {
+0000000|                return ConsoleInfo.dwSize.X;
+       |        }
+       |        
+       |        static int CheckForWindowSize()
+       |        {
+0000000|                int SizeChanged=WindowSizeChanged;
+0000000|                EnterCriticalSection(&lockWindowSizeChanged);
+0000000|                WindowSizeChanged=0;
+0000000|                LeaveCriticalSection(&lockWindowSizeChanged);
+0000000|                if (SizeChanged)
+0000000|                        GetConsoleScreenBufferInfo(hOut,&ConsoleInfo);
+       |                
+0000000|                return SizeChanged;
+       |        }
+       |        
+       |        static void SetCrtMode(ushort)
+       |        {
+0000000|                SetCursorShape(0x58,0x64);
+       |        }
+       |        
+       |        static void SetCrtModeExt(string)
+       |        {
+0000000|                SetCursorShape(0x58,0x64);
+       |        }
+       |        
+       |        /**[txh]********************************************************************
+       |
+       |  Description:
+       |  Finds the main window title.
+       |
+       |  Return:
+       |  A pointer to a newly allocated string (new[]). Or 0 if fail. by SET.
+       |
+       |***************************************************************************/
+       |        
+       |        static string GetWindowTitle()
+       |        {
+0000000|                wchar buf[mxTitleSize];
+0000000|                DWORD ret = GetConsoleTitleW(buf.ptr, mxTitleSize);
+0000000|                if (ret)
+       |                {
+0000000|                        return cast(string)(buf[0..ret]);
+       |                        /*char *s=new char[ret+1];
+       |                        memcpy(s,buf,ret);
+       |                        s[ret]=0;
+       |                        return s;*/
+       |                }
+0000000|                return null;
+       |        }
+       |        
+       |        /**[txh]********************************************************************
+       |
+       |  Description:
+       |  Sets the main window title.
+       |
+       |  Return:
+       |  non-zero successful. by SET.
+       |
+       |***************************************************************************/
+       |        
+       |        static int SetWindowTitle(string name) {
+0000000|                return SetConsoleTitleW((cast(wstring)(name~0)).ptr);
+       |        }
+       |        
+       |        static void Beep()
+       |        {
+0000000|                MessageBeep(0xFFFFFFFF);
+       |        }
+       |        
+       |        static void Init() {
+0000000|                TScreen.setCursorPos = &SetCursorPos;
+0000000|                TScreen.getCursorPos = &GetCursorPos;
+0000000|                TScreen.getCursorShape = &GetCursorShape;
+0000000|                TScreen.setCursorShape = &SetCursorShape;
+0000000|                TScreen.getRows = &GetRows;
+0000000|                TScreen.getCols = &GetCols;
+0000000|                TScreen.checkForWindowSize = &CheckForWindowSize;
+0000000|                TScreen.setWindowTitle = &SetWindowTitle;
+0000000|                TScreen.getWindowTitle = &GetWindowTitle;
+0000000|                TScreen.setCrtMode = &SetCrtMode;
+0000000|                TScreen.setCrtModeExt = &SetCrtModeExt;
+0000000|                TScreen.beep = &Beep;
+       |        }
+       |
+0000000|        this() {
+0000000|                if (InitConsole() == false)  {
+0000000|                        return;
+       |                }
+0000000|                flags0 = Capabilities1.CodePageVar | Capabilities1.CursorShapes | Capabilities1.CanSetVideoSize;
+0000000|                startupMode=getCrtMode();
+0000000|                startupCursor = getCursorType();
+0000000|                saveScreenWidth = GetCols();
+0000000|                saveScreenHeight = GetRows();
+       |                
+0000000|                uint maxX=saveScreenWidth, maxY=saveScreenHeight;
+0000000|                long aux;
+0000000|                if (optSearch("ScreenWidth",aux))
+0000000|                        maxX = cast(uint)aux;
+0000000|                if (optSearch("ScreenHeight",aux))
+0000000|                        maxY = cast(uint)aux;
+0000000|                if (maxX!=saveScreenWidth || maxY!=saveScreenHeight) {
+0000000|                        setCrtModeRes(maxX,maxY);
+       |                        // Update cached values
+0000000|                        GetConsoleScreenBufferInfo(hOut, &ConsoleInfo);
+       |                }
+       |                
+0000000|                cursorLines = getCursorType();
+0000000|                screenWidth = GetCols();
+0000000|                screenHeight = GetRows();
+       |                
+0000000|                screenBuffer = new CharInfo[screenHeight * screenWidth];
+       |                
+0000000|                GetCursorPos(xCurStart,yCurStart);
+0000000|                suspended = 0;
+0000000|                setCrtData();
+       |        }
+       |
+       |        int InitConsole() {
+0000000|                DWORD flags;
+       |                // Check if we are running in a console
+0000000|                if (!GetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), &flags))
+0000000|                        return 0;
+       |                // Get handles to access Standard Input and Output
+0000000|                hIn     = GetStdHandle(STD_INPUT_HANDLE);
+0000000|                hStdOut = GetStdHandle(STD_OUTPUT_HANDLE);
+       |                // Create a new buffer, it have their own content and cursor
+0000000|                hOut = CreateConsoleScreenBuffer(GENERIC_READ | GENERIC_WRITE, 0, null, CONSOLE_TEXTMODE_BUFFER, null);
+0000000|                if (hStdOut == INVALID_HANDLE_VALUE || hOut==INVALID_HANDLE_VALUE) {
+0000000|                        return 0; // Something went wrong
+       |                }
+       |                // Make the new one the active
+0000000|                if (!SetConsoleActiveScreenBuffer(hOut)) {
+0000000|                        return 0;
+       |                }
+       |                // If we are here this driver will be used
+0000000|                initialized = 1;
+0000000|                if (dCB) {
+0000000|                        dCB();
+       |                }
+       |                
+       |                // Enable mouse input
+0000000|                GetConsoleMode(hIn,&oldConsoleMode);
+0000000|                newConsoleMode = oldConsoleMode | ENABLE_MOUSE_INPUT|ENABLE_WINDOW_INPUT;
+0000000|                newConsoleMode &=~ (ENABLE_LINE_INPUT|ENABLE_ECHO_INPUT|ENABLE_PROCESSED_INPUT);
+0000000|                SetConsoleMode(hIn,newConsoleMode);
+0000000|                SetConsoleCtrlHandler(&ConsoleEventHandler, true);
+       |                
+0000000|                GetConsoleScreenBufferInfo(hOut, &ConsoleInfo);
+       |                
+0000000|                InitializeCriticalSection(&lockWindowSizeChanged);
+       |                
+0000000|                Init();
+       |                
+0000000|                TScreen.clearScreen = &clearScreen;
+0000000|                TScreen.setCharacter = &setCharacter;
+0000000|                TScreen.setCharacters = &setCharacters;
+0000000|                TScreen.System_p = &System;
+0000000|                TScreen.Resume = &Resume;
+0000000|                TScreen.Suspend = &Suspend;
+0000000|                TScreen.setCrtModeRes_p = &SetCrtModeRes;
+0000000|                TScreen.setVideoModeRes_p = &SetVideoModeRes;
+0000000|                TScreen.setVideoMode = &SetVideoMode;
+0000000|                TScreen.setVideoModeExt = &SetVideoModeExt;
+       |                
+0000000|                TVWin32Clipboard.Init();
+0000000|                TGKeyWin32.Init();
+0000000|                THWMouseWin32.Init();
+       |                
+0000000|                DWORD EventThreadID;
+       |                //EventThreadHandle = CreateThread(0, 0, cast(int)&HandleEvents, cast(int)hIn, 0, cast(int)&EventThreadID);
+       |                import std.concurrency;
+0000000|                spawn(&HandleEvents);
+       |                
+0000000|                UINT outCP = GetConsoleOutputCP();
+0000000|                UINT  inCP = GetConsoleCP();
+       |                // Look for user settings
+0000000|                TScreen.optSearch("AppCP", forcedAppCP);
+0000000|                TScreen.optSearch("ScrCP", forcedScrCP);
+0000000|                TScreen.optSearch("InpCP", forcedInpCP);
+       |                // User settings have more priority than detected settings
+0000000|                SetDefaultCodePages(outCP,outCP,inCP);
+0000000|                SetConsoleOutputCP(65001); // 437
+0000000|                SetConsoleCP(65001); // 437
+0000000|                return 1;
+       |        }
+       |
+       |        const CTRL_C_EVENT = 0,
+       |                CTRL_BREAK_EVENT = 1,
+       |                CTRL_CLOSE_EVENT = 2,
+       |                CTRL_LOGOFF_EVENT = 5,
+       |                        CTRL_SHUTDOWN_EVENT = 6;
+       |
+       |        static extern (Windows) BOOL ConsoleEventHandler(DWORD dwCtrlType) nothrow {
+0000000|                if (dwCtrlType==CTRL_C_EVENT || dwCtrlType==CTRL_BREAK_EVENT)
+0000000|                        return true;
+0000000|                return false;
+       |        }
+       |
+       |        static void clearScreen() {
+0000000|                COORD coord ={0,0};
+0000000|                DWORD read;
+0000000|                uint size = GetRows()*GetCols();
+0000000|                FillConsoleOutputAttribute(hOut,0x07,size,coord,&read);
+0000000|                FillConsoleOutputCharacterA(hOut,' ',size,coord,&read);
+       |        }
+       |
+       |        static void setCharacter(uint offset, wchar ch, int attrib) {
+0000000|                setCharacters(offset, [CharInfo(ch, cast(ubyte)attrib)]);
+       |        }
+       |
+       |
+       |        private static int sameCharCount(in CharInfo[] a, in CharInfo[] b) {
+0000000|                int i = 0;
+0000000|                while(i < a.length && i < b.length && a[i] == b[i]) {
+0000000|                        ++i;
+       |                }
+0000000|                return i;
+       |        }
+       |
+       |        static void setCharacters(uint offset, const(CharInfo)[] src) {
+0000000|                CharInfo[] old = screenBuffer[offset..$];
+0000000|                int len = src.length;
+0000000|                const(CharInfo) *oldRight = old.ptr + len-1;
+0000000|                const(CharInfo) *srcRight = src.ptr + len-1;
+       |
+       |
+0000000|                int sameCharCount = sameCharCount(old, src);
+0000000|                offset += sameCharCount;
+0000000|                len -= sameCharCount;
+0000000|                src = src[sameCharCount..$];
+0000000|                old = old[sameCharCount..$];
+       |                
+       |                /* remove unchanged characters from right to left */
+0000000|                while (len > 0 && *oldRight == *srcRight) {
+0000000|                        len--;
+0000000|                        oldRight--;
+0000000|                        srcRight--;
+       |                }
+       |                
+       |                /* write only middle changed characters */
+0000000|                string asd = "être\u03bb\u20AC20";
+0000000|                if (len > 0) {
+0000000|                        CHAR_INFO ch[maxViewWidth];
+0000000|                        assert(maxViewWidth >= len);
+0000000|                        short i = 0;
+0000000|                        for (; i < len; i++) {
+0000000|                                old[i] = src[i];
+0000000|                                wchar writtenChar = src[i].ch;
+0000000|                                ubyte writtenAttrib = src[i].attrib;
+0000000|                                ch[i].Attributes = writtenAttrib;
+0000000|                                ch[i].UnicodeChar = writtenChar;
+       |                        }
+       |                        
+0000000|                        ushort x = offset % screenWidth;
+0000000|                        ushort y = cast(ushort)(offset / screenWidth);
+       |                        
+0000000|                        SMALL_RECT to={x, y, cast(short)(x + i-1), y};
+0000000|                        COORD bsize = {i,1};
+0000000|                        static COORD from = {0,0};
+0000000|                        WriteConsoleOutputW(hOut, ch.ptr, bsize, from, &to);
+       |                }
+       |        }
+       |
+       |        static int System(string command, pid_t *pidChild, int _in,
+       |                                 int _out, int err) {
+       |                // fork mechanism not implemented, indicate the child finished
+0000000|                if (pidChild)
+0000000|                        *pidChild=0;
+       |                // If the caller asks for redirection replace the requested handles
+       |                /***if (_in!=-1)
+       |                        dup2(_in,STDIN_FILENO);
+       |                if (_out!=-1)
+       |                        dup2(_out,STDOUT_FILENO);
+       |                if (err!=-1)
+       |                        dup2(err,STDERR_FILENO);***/
+0000000|                return system(command);
+       |        }
+       |
+       |        static void Resume() {
+       |                // First switch to our handle
+0000000|                SetConsoleActiveScreenBuffer(hOut);
+       |                // Now we can save the current window size
+0000000|                GetConsoleScreenBufferInfo(hOut,&ConsoleInfo);
+0000000|                saveScreenWidth =ConsoleInfo.dwSize.X;
+0000000|                saveScreenHeight=ConsoleInfo.dwSize.Y;
+       |                // Restore our window size
+0000000|                SetCrtModeRes(screenWidth, screenHeight);
+0000000|                GetConsoleScreenBufferInfo(hOut,&ConsoleInfo);
+0000000|                setCrtData();
+       |                // Invalidate the cache to force a redraw
+0000000|                screenBuffer[] = CharInfo(0, 0);
+       |                
+0000000|                GetConsoleMode(hIn,&oldConsoleMode);
+0000000|                SetConsoleMode(hIn,newConsoleMode);
+0000000|                SetConsoleCtrlHandler(&ConsoleEventHandler, true);
+       |        }
+       |
+       |        static int SetCrtModeRes(uint w, uint h, int fW = -1, int fH = -1) {
+0000000|                CONSOLE_SCREEN_BUFFER_INFO info;
+       |                // Find current size
+0000000|                if (!GetConsoleScreenBufferInfo(hOut,&info))
+       |                {
+0000000|                        return 0;
+       |                }
+       |                // Is the same used?
+0000000|                if (info.dwSize.X == cast(int)w && info.dwSize.Y == cast(int)h)
+       |                {
+0000000|                        return 0;
+       |                }
+       |                // Find the max. size, depends on the font and screen size.
+0000000|                COORD max=GetLargestConsoleWindowSize(hOut);
+0000000|                COORD newSize = {cast(short)w, cast(short)h};
+0000000|                if (newSize.X>max.X) newSize.X=max.X;
+0000000|                if (newSize.Y>max.Y) newSize.Y=max.Y;
+       |                // The buffer must be large enough to hold both modes (current and new)
+0000000|                COORD newBufSize=newSize;
+0000000|                if (info.dwMaximumWindowSize.X>newBufSize.X)
+0000000|                        newBufSize.X=info.dwMaximumWindowSize.X;
+0000000|                if (info.dwMaximumWindowSize.Y>newBufSize.Y)
+0000000|                        newBufSize.Y=info.dwMaximumWindowSize.Y;
+       |                // Enlarge the buffer size. It fails if not windowed.
+0000000|                if (!SetConsoleScreenBufferSize(hOut,newBufSize))
+       |                {
+0000000|                        return 0;
+       |                }
+       |                // Resize the window.
+0000000|                SMALL_RECT r={0,0,cast(short)(newSize.X-1), cast(short)(newSize.Y-1)};
+0000000|                if (!SetConsoleWindowInfo(hOut,TRUE,&r)) {// Revert buffer size
+0000000|                        newSize.X=info.dwMaximumWindowSize.X;
+0000000|                        newSize.Y=info.dwMaximumWindowSize.Y;
+0000000|                        SetConsoleScreenBufferSize(hOut,newSize);
+0000000|                        return 0;
+       |                }
+       |                // Now we can shrink the buffer to the needed size
+0000000|                SetConsoleScreenBufferSize(hOut, newSize);
+       |                // Ok! we did it.
+0000000|                return fW!=-1 || fH!=-1 || newSize.X!=cast(int)w || newSize.Y!=cast(int)h ? 2 : 1;
+       |        }
+       |        
+       |        static void Suspend() {
+       |                // Restore window size (using our handle!)
+0000000|                SetCrtModeRes(saveScreenWidth,saveScreenHeight);
+       |                // Switch to the original handle
+0000000|                SetConsoleActiveScreenBuffer(hStdOut);
+0000000|                SetConsoleMode(hIn,oldConsoleMode);
+0000000|                SetConsoleCtrlHandler(&ConsoleEventHandler,false);
+       |        }
+       |
+       |        static int SetVideoModeRes(uint w, uint h, int fW = -1, int fH = -1) {// Set the screen mode
+0000000|                int ret=setCrtModeRes(w,h,fW,fH);
+0000000|                if (ret) {// Memorize new values:
+       |                        // Cache the values for TDisplay
+0000000|                        GetConsoleScreenBufferInfo(hOut,&ConsoleInfo);
+0000000|                        screenWidth =ConsoleInfo.dwSize.X;
+0000000|                        screenHeight=ConsoleInfo.dwSize.Y;
+0000000|                        screenBuffer=new CharInfo[screenHeight * screenWidth];
+       |                        // This is something silly TV code spects: after a video mode change the
+       |                        // cursor should go to the "default" state.
+0000000|                        setCursorType(cursorLines);
+       |                        // Cache the data about it and initialize related stuff
+0000000|                        setCrtData();
+       |                }
+0000000|                return ret;
+       |        }
+       |
+       |        static void SetVideoMode(ushort mode) {
+0000000|                int oldWidth = screenWidth;
+0000000|                int oldHeight = screenHeight;
+       |                
+0000000|                TScreen.defaultSetVideoMode(mode);
+0000000|                CheckSizeBuffer(oldWidth, oldHeight);
+       |        }
+       |
+       |        static void CheckSizeBuffer(int oldWidth, int oldHeight) {
+0000000|                screenBuffer = new CharInfo[screenWidth * screenHeight];
+       |        }
+       |
+       |        static void SetVideoModeExt(string mode) {
+0000000|                int oldWidth = screenWidth;
+0000000|                int oldHeight = screenHeight;
+       |                
+0000000|                TScreen.defaultSetVideoModeExt(mode);
+0000000|                CheckSizeBuffer(oldWidth, oldHeight);
+       |        }
+       |        
+       |        static void deInit() {
+0000000|                Suspend();
+0000000|                suspended = 1;
+0000000|                setCursorType(startupCursor);
+0000000|                DoneConsole();
+0000000|                if (screenBuffer) {
+0000000|                        screenBuffer=null;
+       |                }
+       |        }
+       |
+       |        static void DoneConsole() {
+0000000|                INPUT_RECORD ir;
+0000000|                DWORD written;
+       |                
+       |                // Stop the events thread
+       |                //ZeroMemory(&ir,sizeof(ir));
+0000000|                ExitEventThread = 1;
+0000000|                ir.EventType=KEY_EVENT;
+0000000|                WriteConsoleInputA(hIn, &ir, 1, &written);
+0000000|                WaitForSingleObject(EventThreadHandle,INFINITE);
+0000000|                CloseHandle(EventThreadHandle);
+       |                
+0000000|                DeleteCriticalSection(&lockWindowSizeChanged);
+0000000|                THWMouseWin32.DeInit();
+0000000|                TGKeyWin32.DeInit();
+       |        }
+       |}
+       |
+       |static private void HandleEvents() {
+0000000|        INPUT_RECORD ir;
+0000000|        DWORD dwRead;
+0000000|        while (!ExitEventThread) {
+0000000|                WaitForSingleObject(hIn,INFINITE);
+0000000|                if (!ExitEventThread) {
+0000000|                        if (PeekConsoleInputA(hIn,&ir,1,&dwRead) && dwRead>0) {
+0000000|                                switch (ir.EventType) {
+0000000|                                        case MOUSE_EVENT:
+0000000|                                                THWMouseWin32.HandleMouseEvent();
+0000000|                                                break;  
+0000000|                                        case KEY_EVENT:
+0000000|                                                TGKeyWin32.HandleKeyEvent();
+0000000|                                                break;  
+0000000|                                        case WINDOW_BUFFER_SIZE_EVENT:
+0000000|                                                EnterCriticalSection(&lockWindowSizeChanged);
+0000000|                                                WindowSizeChanged = 1;
+0000000|                                                LeaveCriticalSection(&lockWindowSizeChanged);
+0000000|                                                goto default;
+0000000|                                        default:
+0000000|                                                ReadConsoleInputA(hIn,&ir,1,&dwRead);
+0000000|                                                break;
+       |                                }
+       |                        }
+       |                }
+       |                else {
+0000000|                        ReadConsoleInputA(hIn,&ir,1,&dwRead);
+       |                }
+       |        }
+       |}
+..\d\win32\win32scr.d is 0% covered

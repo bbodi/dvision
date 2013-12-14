@@ -1,0 +1,71 @@
+       |module ttypes;
+       |
+       |import std.exception;
+       |import std.algorithm;
+       |import std.string;
+       |
+       |alias int pid_t;
+       |alias int ccIndex;
+       |
+       |template ccTestFunc(T) {
+       |        alias bool function(T, T) ccTestFunc;
+       |        alias void function(T, T) ccAppFunc;
+       |}
+       |
+       |template ccAppFunc(T) {
+       |        alias void function(T, T) ccAppFunc;
+       |}
+       |
+       |const int ccNotFound = -1;
+       |
+       |
+       |unittest {
+      1|        auto a = Optional!int(2);
+      1|        assert(a.isNull == false);
+      1|        assert(a.get == 2);
+       |        
+      1|        auto b = Optional!int(0, true);
+      1|        assert(b.isNull == true);
+      2|        assertThrown(b.get == 0);
+       |        
+      1|        auto c = None!int;
+      1|        auto d = Some(2);
+       |}
+       |
+       |struct Optional(T) {
+       |        private T _value;
+       |        private bool _isNull;
+       |        
+       |        @property bool isNull() const {
+      2|                return _isNull;
+       |        }
+       |        
+       |        @property bool hasValue() const {
+0000000|                return _isNull == false;
+       |        }
+       |        
+       |        inout(T) get() inout {
+      2|                enforce(_isNull == false);
+      1|                return _value;
+       |        }
+       |
+       |        @property Optional!T none() {
+0000000|                return None!T();
+       |        }
+       |
+       |        @property Optional!T some(U)(U val) {
+       |                return Some!T(cast(T)val);
+       |        }
+       |}
+       |
+       |static Optional!T Some(T)(T value) {
+       |        static if (is(T == class)) {
+       |                enforce(value !is null, "Use None instead!");
+       |        }
+      1|        return Optional!T(value, false);
+       |}
+       |
+       |static @property Optional!T None(T)() {
+      1|        return Optional!T(T.init, true);
+       |}
+..\d\ttypes.d is 86% covered

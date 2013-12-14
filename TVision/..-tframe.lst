@@ -1,0 +1,362 @@
+       |module tframe;
+       |
+       |import tview;
+       |import twindow;
+       |import std.algorithm : max, min;
+       |import std.conv;
+       |
+       |private immutable ubyte[] cpFrame = [0x01, 0x01, 0x02, 0x02, 0x03];
+       |
+       |private immutable TPalette palette = immutable(TPalette)(cpFrame);
+       |
+       |private immutable ubyte[] initFrame =   // not active state
+       |[6, 10, 12,
+       |5, 0, 5,
+       |3, 10, 9,
+       |// active state
+       |22, 26, 28,
+       |21, 0, 21,
+       |19, 26, 25];
+       |
+       |class TFrame : TView {
+       |        
+       |        //[32, 0x250C, 0x2500,0x2510, // " ┌─┐"
+       |        // 32, 32, 0x2514, 0x2500, 0x2518, 32, 32, // "  └─┘  "
+       |        // 0x2502, 32, 0x2502, 32, 32, // "│ │ " 
+       |        // 0x251C, 0x2500, 0x2524, 32]; // "├─┤ "
+       |        private static immutable wstring frameChars = cast(wstring)[    32, 32, 32, 0x2514, 'a',
+       |                                                                        0x2502, 0x250C, 0x251C, 0x251C, 0x2518, 
+       |                                                                        0x2500, 'n', 0x2510, 0x251C, 0x252C, 
+       |                                                                        0x251C, 'o', 0x251C, 'b', 0x2514, 
+       |                                                                        0x2510, 0x2502, 0x250C, 0x251C, 'm', 
+       |                                                                        0x2518, 0x2500, 32, 0x2510, 32, 
+       |                                                                        0x252C, 0x252C, 32, 0x252C, 'k',
+       |                                                                        0x251C, 'l', 0x251C, 'c', 32,
+       |                                                                        0x252C, 'j', 0x251C, 'd', 0x251C,
+       |                                                                        'g', 0x252C, 'h', 0x252C, 'e',
+       |                                                                         0x251C, 'f', 32];
+       |//              "   À ³ÚÃ ÙÄÁ¿´ÂÅ   È ºÉÇ ¼ÍÏ»¶Ñ "; // for UnitedStates code page
+       |        //static string oframeChars = "   À ³ÚÃ ÙÄÁ¿´ÂÅ   È ºÉÇ ¼ÍÏ»¶Ñ "; // for UnitedStates code page
+       |        // þ  
+       |
+       |
+       |        private static immutable wstring closeIcon = "[~x~]";
+       |        private static immutable wstring zoomIcon = cast(wstring)['~', 0x2191, '~'];
+       |        private static immutable wstring unZoomIcon = cast(wstring)['~', 0x2193, '~'];
+       |        // Note: Eddie proposed 0xF (WHITE SUN WITH RAYS) but this reduces to * and
+       |        // is the same as 0xFE (BLACK SQUARE) (also reduced to *).
+       |        private static immutable wstring animIcon = "[~+~]";
+       |        private static immutable wstring dragIcon = cast(wstring)['~', 0x2500, 0x2518, '~'];
+       |
+       |        bool doAnimation = true;
+       |
+0000000|        this(in TRect bounds) {
+0000000|                super(bounds);
+0000000|                growMode = gfGrowHiX + gfGrowHiY;
+0000000|                eventMask |= evBroadcast | evMouseUp;
+       |        }
+       |
+       |        override void draw() {
+0000000|                ushort cFrame, cTitle;
+0000000|                int  frameCharOffset;
+       |
+0000000|                if( (state & sfActive) == 0 ) {
+0000000|                        cFrame = 0x0101;
+0000000|                        cTitle = 0x0002;
+0000000|                        frameCharOffset = 0;
+       |        } else {
+0000000|                        if( (state & sfDragging) != 0 ) {
+0000000|                                cFrame = 0x0505;
+0000000|                                cTitle = 0x0005;
+0000000|                                frameCharOffset = 0;
+       |            } else {
+0000000|                                cFrame = 0x0503;
+0000000|                                cTitle = 0x0004;
+0000000|                                frameCharOffset = 9;
+       |            }
+       |                }
+       |
+0000000|                cFrame = getColor(cFrame);
+0000000|                cTitle = getColor(cTitle);
+       |
+0000000|                int width = size.x;
+0000000|                int l = width - 10;
+       |
+0000000|                if( ( (cast(TWindow)owner).flags & (wfClose | wfZoom) ) != 0 ) {
+0000000|                        l -= 6;
+       |                }
+0000000|                TDrawBuffer b;
+0000000|                frameLine( b, 0, frameCharOffset, cast(ubyte)cFrame );
+       |
+0000000|                int winNumOffset;
+0000000|                if( (cast(TWindow)owner).number != wnNoNumber ) {
+0000000|                        l -= 4;
+0000000|                        if( ( (cast(TWindow)owner).flags & wfZoom ) != 0 ) {
+0000000|                                winNumOffset = 7;
+       |                        } else {
+0000000|                                winNumOffset = 3;
+       |                        }
+0000000|                        int number = (cast(TWindow)owner).number;
+0000000|                        if (number > 10) winNumOffset++;
+0000000|                        if (number > 100) winNumOffset++;
+0000000|                        if (number > 1000) winNumOffset++;
+0000000|                        string Number = to!string(number);
+0000000|                        foreach(j, char ch; Number) {
+0000000|                                b.putChar( width-winNumOffset+j, ch);
+       |                        }
+       |        }
+       |
+0000000|                drawTitle(b, winNumOffset, l, cTitle);
+       |
+0000000|                if( (state & sfActive) != 0 ) {
+0000000|                        if( ( (cast(TWindow)owner).flags & wfClose ) != 0 ) {
+0000000|                                b.moveCStr( 2, closeIcon, cFrame );
+       |                        }
+0000000|                        if( ( (cast(TWindow)owner).flags & wfZoom ) != 0 ) {
+0000000|                                TPoint minSize, maxSize;
+0000000|                                owner.sizeLimits( minSize, maxSize );
+0000000|                                if( owner.size == maxSize ) {
+0000000|                                        b.moveCStr( width-5, unZoomIcon, cFrame );
+       |                                } else {
+0000000|                                        b.moveCStr( width-5, zoomIcon, cFrame );
+       |                                }
+       |            }
+       |        }
+       |
+0000000|                writeLine( 0, 0, size.x, 1, b );
+0000000|                for( int i = 1; i <=  size.y - 2; i++ ) {
+0000000|                        frameLine( b, i, frameCharOffset +  3, cast(ubyte)cFrame );
+0000000|                        writeLine( 0, i, size.x, 1, b );
+       |        }
+0000000|                frameLine( b, size.y - 1, frameCharOffset +  6, cast(ubyte)cFrame );
+0000000|                if( (state & sfActive) != 0 ) {
+0000000|                        if( ( (cast(TWindow)owner).flags & wfGrow ) != 0 ) {
+0000000|                                b.moveCStr( width-2, dragIcon, cFrame );
+       |                        }
+       |                }
+0000000|                writeLine( 0, size.y - 1, size.x, 1, b );
+       |        }
+       |
+       |        private void drawTitle(ref TDrawBuffer b, int winNumOffset, int l, ushort cTitle) const {
+0000000|                if( owner !is null ) {
+0000000|                        string title = (cast(TWindow)owner).getTitle(winNumOffset);
+0000000|                        int width = size.x;
+0000000|                        if( title !is null ) {
+0000000|                                int maxLen = max( width - 10, 0);
+0000000|                                int titleLen = title.lenWithoutTides;
+0000000|                                if (titleLen > maxLen) {
+0000000|                                        winNumOffset = (width - maxLen) >> 1;
+0000000|                                        b.moveBuf( winNumOffset-1, " ..", cTitle, 3 );
+0000000|                                        int from = min((titleLen - maxLen + 2), title.length);
+0000000|                                        auto part = title[from..$];
+0000000|                                        b.moveBuf( winNumOffset+2, part, cTitle, min(maxLen, part.length) );
+0000000|                                        b.putChar( winNumOffset+maxLen, ' ' );
+0000000|                                        b.putChar( winNumOffset+maxLen+1, ' ' );
+       |                                } else {
+0000000|                                        maxLen = titleLen;
+0000000|                                        winNumOffset = (width - maxLen) >> 1;
+0000000|                                        b.putChar( winNumOffset-1, ' ' );
+0000000|                                        b.moveBuf( winNumOffset, title, cTitle, maxLen );
+0000000|                                        b.putChar( winNumOffset + maxLen, ' ' );
+       |                                }
+       |            }
+       |        }
+       |        }
+       |
+       |        char FrameMask[maxViewWidth];
+       |
+       |        void frameLine( ref TDrawBuffer frameBuf, int y, int n, ubyte color ) {
+0000000|                int si,ax,cx,dx,di;
+0000000|                int i=1;
+0000000|                TView view;
+0000000|                cx = dx = size.x;
+0000000|                cx -= 2;
+0000000|                FrameMask[0] = initFrame[n];
+0000000|                while (cx--) {
+0000000|                        FrameMask[i++] = initFrame[n+1];
+       |                }
+0000000|                FrameMask[i] = initFrame[n+2];
+0000000|                view = owner.last;
+0000000|                dx--;
+       |        lab1:
+0000000|                view = view.next;
+0000000|                if (view is this) goto lab10;
+0000000|                if (!(view.options & ofFramed)) goto lab1;
+0000000|                if (!(view.state & sfVisible)) goto lab1;
+0000000|                ax = y - view.origin.y;
+0000000|                if (cast(short)(ax) < 0) 
+0000000|                        goto lab3;
+0000000|                if (ax>view.size.y) goto lab1;
+0000000|                if (ax<view.size.y) ax = 5;
+0000000|                else ax = 0x0a03;
+0000000|                goto lab4;
+       |        lab3:
+0000000|                ax++;
+0000000|                if (ax) goto lab1;
+0000000|                ax = 0x0a06;
+       |        lab4:
+0000000|                si = view.origin.x;
+0000000|                di = si + view.size.x;
+0000000|                if (si>1) goto lab5;
+0000000|                si = 1;
+       |        lab5:
+0000000|                if (di<dx) goto lab6;
+0000000|                di = dx;
+       |        lab6:
+0000000|                if (si>=di) goto lab1;
+0000000|                FrameMask[si-1] |= (ax & 0x00ff);
+0000000|                ax ^= (((ax & 0xff00) >> 8) & 0x00ff);
+0000000|                FrameMask[di] |= (ax & 0x00ff);
+0000000|                if (!(ax & 0xff00)) goto lab1;
+0000000|                cx = di-si;
+0000000|                while (cx--) FrameMask[si++] |= (((ax & 0xff00) >> 8) & 0x00ff);
+0000000|                goto lab1;
+       |        lab10:
+0000000|                dx++;
+       |                {
+0000000|                        wchar[] framechars = new wchar[dx]; //ubyte * framechars = (ubyte *)malloc(dx);
+0000000|                        for ( i = 0; i < dx; i++) {
+0000000|                                auto ch = cast(wchar)(frameChars[cast(uint)FrameMask[i]]);
+0000000|                                framechars[i] = ch;
+       |                        }
+0000000|                        frameBuf.moveBuf(0, framechars, color, dx);
+       |                }
+       |        }
+       |
+       |        override ref immutable(TPalette) getPalette() const {
+0000000|                return palette;
+       |        }
+       |
+       |        void dragWindow( ref TEvent event, ubyte mode ) {
+0000000|                TRect  limits;
+0000000|                TPoint min, max;
+       |
+0000000|                limits = owner.owner.getExtent();
+0000000|                owner.sizeLimits( min, max );
+0000000|                owner.dragView( event, owner.dragMode | mode, limits, min, max );
+0000000|                clearEvent( event );
+       |        }
+       |
+       |        const int ciClose=0, ciZoom=1;
+       |
+       |        void drawIcon( int bNormal, const int ciType ) {
+0000000|                ushort cFrame;
+       |
+0000000|                if( (state & sfActive) == 0 ) {
+0000000|                        cFrame = 0x0101;
+       |                } else {
+0000000|                        if( (state & sfDragging) != 0 ) {
+0000000|                                cFrame = 0x0505;
+       |                        } else {
+0000000|                                cFrame = 0x0503;
+       |                        }
+       |                }
+       |
+0000000|                cFrame = getColor(cFrame);
+       |
+0000000|                switch( ciType ) {
+       |                        // Close icon
+0000000|                        case ciClose:
+       |                                {
+0000000|                                        TDrawBuffer drawBuf;
+0000000|                                        drawBuf.moveCStr( 0, bNormal ? closeIcon : animIcon, cFrame );
+0000000|                                        writeLine( 2, 0, 3, 1, drawBuf );
+       |                                }
+0000000|                                break;
+       |                                // Zoom icon
+       |                                //case ciZoom:
+0000000|                        default:
+       |                                {
+0000000|                                        TPoint minSize, maxSize;
+0000000|                                        owner.sizeLimits( minSize, maxSize );
+       |
+0000000|                                        TDrawBuffer drawBuf;
+0000000|                                        drawBuf.moveCStr( 0, bNormal ? ( (owner.size == maxSize) ? unZoomIcon : zoomIcon ) : animIcon, cFrame );
+0000000|                                        writeLine( size.x - 5, 0, 3, 1, drawBuf );
+       |                                }
+0000000|                                break;
+       |        }
+       |        }
+       |
+       |        private bool mouseOverClose(in TPoint mouse) const {
+0000000|                return mouse.y == 0 && mouse.x >= 2 && mouse.x <= 4;
+       |        }
+       |
+       |        private bool mouseOverZoom(in TPoint mouse) const {
+0000000|                return mouse.y == 0 && ( mouse.x >= size.x - 5 ) && ( mouse.x <= size.x - 3 );
+       |        }
+       |
+       |        private bool mouseOverGrow(in TPoint mouse) const {
+0000000|                return (mouse.x >= size.x - 2 ) && ( mouse.y >= size.y - 1);
+       |        }
+       |
+       |        override void handleEvent( ref TEvent event ) {
+0000000|                TView.handleEvent(event);
+0000000|                int ownerFlags = (cast(TWindow)owner).flags;
+       |                // This version incorporates Eddie changes to "animate" the close and zoom icons.
+0000000|                if( (event.what & (evMouseDown | evMouseUp)) && (state & sfActive) ) {
+0000000|                        TPoint mouse = makeLocal( event.mouse.where );
+0000000|                        if( mouse.y == 0 ) {   // Close icon
+0000000|                                if( ( ownerFlags & wfClose ) && mouseOverClose(mouse) ) {
+0000000|                                        if( doAnimation ) {   // Animated version, capture the focus until the button is released
+       |                                                do {
+0000000|                                                        mouse = makeLocal( event.mouse.where );
+0000000|                                                        drawIcon( !mouseOverClose(mouse), ciClose );
+0000000|                                                } while( mouseEvent( event, evMouseMove ) );
+       |
+0000000|                                                if( event.what == evMouseUp  && mouseOverClose(mouse) ) {
+0000000|                                                        createEvent( evCommand, cm.Close, owner );
+0000000|                                                        clearEvent( event );
+0000000|                                                        drawIcon( 1, ciClose );
+       |                                                }
+       |                                        }
+       |                                        else {   // Not animated
+0000000|                                                if( event.what == evMouseUp )
+0000000|                                                        createEvent( evCommand, cm.Close, owner );
+0000000|                                                clearEvent( event );
+       |                                        }
+       |                                } else {   // Double click on the upper line or zoom icon
+0000000|                                        if ( event.mouse.doubleClick || ( ( ownerFlags & wfZoom ) && mouseOverZoom(mouse) ) ) {
+0000000|                                                if ( event.mouse.doubleClick ) {
+0000000|                                                        createEvent( evCommand, cm.Zoom, owner );
+0000000|                                                        clearEvent( event );
+       |                                                } else {
+0000000|                                                        if( doAnimation ) {   // Animated version, capture the focus until the button is released
+       |                                                                do {
+0000000|                                                                        mouse = makeLocal( event.mouse.where );
+0000000|                                                                        drawIcon( !mouseOverZoom(mouse), ciZoom );
+       |
+0000000|                                                                } while( mouseEvent( event, evMouseMove ) );
+       |
+0000000|                                                                if( ( event.what == evMouseUp ) && mouseOverZoom(mouse) ) {
+0000000|                                                                        createEvent( evCommand, cm.Zoom, owner );
+0000000|                                                                        clearEvent( event );
+0000000|                                                                        drawIcon( 1, ciZoom );
+       |                                                                }
+       |                                                        } else {   // Not animated
+0000000|                                                                if( event.what == evMouseUp ) {
+0000000|                                                                        createEvent( evCommand, cm.Zoom, owner );
+       |                                                                }
+0000000|                                                                clearEvent( event );
+       |                                                        }
+       |                                                }
+       |                                        } else {
+       |                                                // Click on the upper line (move)
+0000000|                                                if( (ownerFlags & wfMove) && (event.what & evMouseDown) )
+0000000|                                                        dragWindow( event, dmDragMove );
+       |                                        }
+       |                                }
+0000000|                        } else if( (event.what & evMouseDown) && mouseOverGrow(mouse) ) {   // Click on the grow corner
+0000000|                                if( ownerFlags & wfGrow )
+0000000|                                        dragWindow( event, dmDragGrow );
+       |                        }
+       |                }
+       |        }
+       |
+       |        override void setState( ushort aState, bool enable ) {
+0000000|                TView.setState( aState, enable );
+0000000|                if( (aState & (sfActive | sfDragging)) != 0 )
+0000000|                        drawView();
+       |        }
+       |}
+..\tframe.d is 0% covered

@@ -1,0 +1,24 @@
+       |module commands;
+       |
+       |struct Command {
+       |        private string name;
+       |
+       |        bool someOfThem(in Command[] cmds...) {
+0000000|                foreach(ref cmd; cmds) {
+0000000|                        if (cmd == this) {
+0000000|                                return true;
+       |                        }
+       |                }
+0000000|                return false;
+       |        }
+       |
+       |}
+       |
+       |struct cm {
+       |
+       |    template opDispatch(string name) {
+       |                enum opDispatch = Command(name);
+       |    }
+       |
+       |}
+..\d\commands.d is 0% covered

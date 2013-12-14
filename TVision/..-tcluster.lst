@@ -1,0 +1,278 @@
+       |module tcluster;
+       |
+       |import std.uni;
+       |
+       |import tvision;
+       |import tview;
+       |import tsitem;
+       |import tstringcollection;
+       |
+       |immutable ubyte[] cpCluster = [0x10, 0x11, 0x12, 0x12, 0x1F];
+       |immutable TPalette palette = immutable(TPalette)( cpCluster);
+       |
+       |class TCluster : TView {
+       |
+       |        // SET: To report the movedTo and press as broadcasts, set it to 0 if you
+       |        // don't like it.
+       |        static uint extraOptions=ofBeVerbose;
+       |
+       |    protected uint value;
+       |    protected int sel;
+       |    // SET: i18n cache
+       |    //protected TStringCollectionCIntl *intlStrings;
+       |    protected TStringCollection strings;
+       |
+0000000|    this( in TRect bounds, TSItem *aStrings ) { 
+0000000|                super(bounds);
+0000000|                value = sel  = 0;
+0000000|            options |= ofSelectable | ofFirstClick | ofPreProcess | ofPostProcess |
+       |                       extraOptions;
+0000000|            int stringCount = 0;
+0000000|            for( TSItem *p = aStrings; p != null; p = p.next )
+0000000|                stringCount++;
+       |
+0000000|            strings = new TStringCollection( stringCount, 0 );
+       |
+0000000|            while( aStrings != null ) {
+0000000|                strings.atInsert( strings.getCount(), aStrings.value );
+0000000|                aStrings = aStrings.next;
+       |                }
+       |
+0000000|            setCursor( 2, 0 );
+0000000|            showCursor();
+       |        }
+       |
+       |        string getItemText( ccIndex item ) {
+0000000|            string key = strings.at( item );
+0000000|            return key;
+       |        }
+       |
+       |        override uint dataSize() {
+       |         // I have changed value from ushort to uint, but to be compatible
+       |         // I set dataSize to 2.
+       |         // SET: I added TRadioButtons32 and TCheckBox32
+0000000|                return uint.sizeof;
+       |        }
+       |
+       |        void drawBox( string icon, wchar marker) {
+0000000|            TDrawBuffer b;
+0000000|            ushort color;
+       |
+0000000|            ushort cNorm = state & sfDisabled ? getColor( 0x0505 ) : getColor( 0x0301 );
+0000000|            ushort cSel = getColor( 0x0402 );
+0000000|            for( int i = 0; i <= size.y; i++ ) {
+0000000|                for( int j = 0; j <= (strings.getCount()-1)/size.y + 1; j++ ) {
+0000000|                    int cur = j * size.y + i;
+0000000|                    int col = column( cur );
+0000000|                    if ( ( cur < strings.getCount() ) &&
+0000000|                        (col+getItemText(cur).length+5 < maxViewWidth) &&
+0000000|                        (col<size.x) ) {
+0000000|                        if( (cur == sel) && (state & sfSelected) != 0 )
+0000000|                            color = cSel;
+       |                        else
+0000000|                            color = cNorm;
+0000000|                        b.moveChar( col, ' ', color, size.x - col );
+0000000|                        b.moveCStr( col, icon, color );
+0000000|                        if( mark(cur) )
+0000000|                            b.putChar( col+2, marker );
+0000000|                        b.moveCStr( col+5, getItemText(cur), color );
+0000000|                        if( showMarkers && (state & sfSelected) != 0 && cur == sel ) {
+0000000|                            b.putChar( col, specialChars[0] );
+0000000|                            b.putChar( column(cur+size.y)-1, specialChars[1] );
+       |                                        }
+       |                                }
+       |                        }
+0000000|                writeBuf( 0, i, size.x, 1, b );
+       |                }
+0000000|            setCursor( column(sel)+2, row(sel) );
+       |        }
+       |
+       |        override void getData(void * rec) {
+0000000|                *(cast(ushort*)rec) = cast(ushort)value;
+       |            //memcpy(rec, &value, dataSize());
+       |        }
+       |
+       |        override int getHelpCtx() const {
+0000000|            if( helpCtx == hcNoContext )
+0000000|                return hcNoContext;
+       |            else
+0000000|                return helpCtx + sel;
+       |        }
+       |
+       |        override ref immutable(TPalette) getPalette() const {
+0000000|            return palette;
+       |        }
+       |
+       |        override void handleEvent( ref TEvent event ) {
+0000000|            TView.handleEvent(event);
+0000000|            if( event.what == evMouseDown ) {
+0000000|                TPoint mouse = makeLocal( event.mouse.where );
+0000000|                int i = findSel(mouse);
+0000000|                if( i != -1 )
+0000000|                    sel = i;
+0000000|                drawView();
+       |                do  {
+0000000|                    mouse = makeLocal( event.mouse.where );
+0000000|                    if( findSel(mouse) == sel )
+0000000|                        showCursor();
+       |                    else
+0000000|                        hideCursor();
+0000000|                        } while( mouseEvent(event,evMouseMove) );
+0000000|                showCursor();
+0000000|                mouse = makeLocal( event.mouse.where );
+0000000|                if( findSel(mouse) == sel ) {
+0000000|                    press(sel);
+0000000|                    drawView();
+       |                        }
+0000000|                clearEvent(event);
+0000000|                } else if( event.what == evKeyDown )
+0000000|                switch (ctrlToArrow(event.keyDown.keyCode)) {
+0000000|                    case KeyCode.kbUp:
+0000000|                        if( (state & sfFocused) != 0 ) {
+0000000|                            if( --sel < 0 )
+0000000|                                sel = strings.getCount()-1;
+0000000|                            movedTo(sel);
+0000000|                            drawView();
+0000000|                            clearEvent(event);
+       |                                        }
+0000000|                        break;
+       |
+0000000|                    case KeyCode.kbDown:
+0000000|                        if( (state & sfFocused) != 0 ) {
+0000000|                            if( ++sel >= strings.getCount() )
+0000000|                                sel = 0;
+0000000|                            movedTo(sel);
+0000000|                            drawView();
+0000000|                            clearEvent(event);
+       |                                        }
+0000000|                        break;
+0000000|                    case KeyCode.kbRight:
+0000000|                        if( (state & sfFocused) != 0 ) {
+0000000|                            sel += size.y;
+0000000|                            if( sel >= strings.getCount() ) {
+0000000|                                sel = (sel +  1) % size.y;
+0000000|                                if( sel >= strings.getCount() )
+0000000|                                    sel =  0;
+       |                                                }
+0000000|                            movedTo(sel);
+0000000|                            drawView();
+0000000|                            clearEvent(event);
+       |                                        }
+0000000|                        break;
+0000000|                    case KeyCode.kbLeft:
+0000000|                        if( (state & sfFocused) != 0 ) {
+0000000|                            if( sel > 0 ) {
+0000000|                                sel -= size.y;
+0000000|                                if( sel < 0 ) {
+0000000|                                    sel = ((strings.getCount()+size.y-1) /size.y)*size.y + sel - 1;
+0000000|                                    if( sel >= strings.getCount() )
+0000000|                                        sel = strings.getCount()-1;
+       |                                                        }
+       |                                                } else
+0000000|                                sel = strings.getCount()-1;
+0000000|                            movedTo(sel);
+0000000|                            drawView();
+0000000|                            clearEvent(event);
+       |                                        }
+0000000|                        break;
+0000000|                    default:
+0000000|                        for( int i = 0; i < strings.getCount(); i++ ) {
+0000000|                            char c = hotKey( getItemText(i) );
+0000000|                            if( TGKey.GetAltCode(c) == event.keyDown.keyCode ||
+0000000|                                ( ( owner.phase == phaseType.phPostProcess ||
+0000000|                                    (state & sfFocused) != 0
+       |                                  ) &&
+0000000|                                  c != 0 &&
+0000000|                                  CompareUpperASCII(event.keyDown.charScan.charCode, c)
+       |                                )
+       |                              ) {
+0000000|                                select();
+0000000|                                sel =  i;
+0000000|                                movedTo(sel);
+0000000|                                press(sel);
+0000000|                                drawView();
+0000000|                                clearEvent(event);
+0000000|                                return;
+       |                                                }
+       |                                        }
+0000000|                        if( event.keyDown.charScan.charCode == ' ' &&
+0000000|                            (state & sfFocused) != 0
+       |                          ) {
+0000000|                            press(sel);
+0000000|                            drawView();
+0000000|                            clearEvent(event);
+       |                                        }
+       |                        }
+       |        }
+       |
+       |        override void setData(void * rec) {
+0000000|                value = *(cast(ushort*)rec);
+       |            //memcpy(&value,rec,dataSize());
+0000000|            drawView();
+       |        }
+       |
+       |        override void setState( ushort aState, bool enable ) {
+0000000|            TView.setState( aState, enable );
+0000000|            if( aState == sfSelected || aState == sfDisabled )
+0000000|                drawView();
+       |        }
+       |
+       |        bool mark( int ) {
+0000000|            return false;
+       |        }
+       |
+       |        void movedTo( int /*item*/ ) {
+0000000|         if (owner && (options & ofBeVerbose))
+0000000|            message(owner,evBroadcast,cm.ClusterMovedTo,this);
+       |        }
+       |
+       |        void press( int /*item*/ ) {
+0000000|         if (owner && (options & ofBeVerbose))
+0000000|            message(owner,evBroadcast,cm.ClusterPress,this);
+       |        }
+       |
+       |   private int column( int item ) {
+0000000|                if( item < size.y ) {
+0000000|                return 0;
+       |            } else {
+0000000|                int width = 0;
+0000000|                int col = -6;
+0000000|                int l = 0;
+0000000|                for( int i = 0; i <= item; i++ ) {
+0000000|                    if( i % size.y == 0 ) {
+0000000|                        col += width + 6;
+0000000|                        width = 0;
+       |                                }
+       |
+0000000|                    if( i < strings.getCount() )
+0000000|                        l = getItemText(i).length;
+0000000|                    if( l > width )
+0000000|                        width = l;
+       |                        }
+0000000|                return col;
+       |                }
+       |        }
+       |
+       |        private int findSel( TPoint p ) {
+0000000|            TRect r = getExtent();
+0000000|            if( !r.contains(p) ) {
+0000000|                return -1;
+       |            } else  {
+0000000|                int i = 0;
+0000000|                while( p.x >= column( i + size.y ) )
+0000000|                    i += size.y;
+0000000|                int s = i + p.y;
+0000000|                if( s >= strings.getCount() )
+0000000|                    return -1;
+       |                else
+0000000|                    return s;
+       |                }
+       |        }
+       |
+       |        private int row( int item ) {
+0000000|            return item % size.y;
+       |        }
+       |
+       |
+       |}
+..\tcluster.d is 0% covered

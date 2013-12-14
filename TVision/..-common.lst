@@ -1,0 +1,59 @@
+       |module common;
+       |
+       |import std.uni;
+       |import std.utf;
+       |
+       |import tpoint;
+       |
+       |const ubyte shadowAttr = 0x08;
+       |const EOS =     '\0';
+       |
+       |string __(string str) {
+0000000|        return str;
+       |}
+       |
+       |string _(string str) {
+0000000|        return str;
+       |}
+       |
+       |char hotKey( string s ) {
+0000000|    auto index = std.string.indexOf(s, "~");
+0000000|    if( index != -1 )
+0000000|        return cast(char)(s[index+1].toUpper());
+       |    else
+0000000|        return 0;
+       |}
+       |
+       |
+       |TPoint shadowSize = {2,1};
+       |
+       |import std.uni;
+       |bool CompareUpperASCII(char a, char b) {
+0000000|        return toUpper(a) == toUpper(b);
+       |}
+       |
+       |@property int lenWithoutTides(S)(in S str) {
+       |        import std.algorithm : max, count;
+      3|        return max(0, std.utf.count(str) - str.count("~"));
+       |}
+       |
+       |import tpalette;
+       |mixin template DefinePalette(alias paletteData) {
+       |        static immutable ubyte[] cpPalette = paletteData;
+       |        static immutable TPalette myPalette = immutable(TPalette)(paletteData);
+       |}
+       |
+       |void insert(T)(ref T[] array, int pos, T elem) {
+       |        array = array[0..pos] ~ elem ~ array[pos..$];
+       |}
+       |
+       |void add(T)(ref T[] array, T elem) {
+0000000|        array ~= elem;
+       |}
+       |
+       |string stringToString(string s) {
+0000000|        return s;
+       |}
+       |
+       |import std.file;
+..\common.d is 10% covered

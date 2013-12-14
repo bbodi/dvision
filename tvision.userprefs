@@ -1,0 +1,30 @@
+﻿<Properties>
+  <MonoDevelop.Ide.Workspace ActiveConfiguration="Unittest" />
+  <MonoDevelop.Ide.Workbench ActiveDocument="d\tasklist.d">
+    <Files>
+      <File FileName="d\tasklist.d" Line="34" Column="12" />
+      <File FileName="d\tdrawbuffer.d" Line="44" Column="15" />
+      <File FileName="d\main.d" Line="109" Column="3" />
+      <File FileName="d\twindow.d" Line="162" Column="30" />
+      <File FileName="d\tlistbox.d" Line="55" Column="1" />
+      <File FileName="d\tlistviewer.d" Line="120" Column="4" />
+    </Files>
+    <Pads>
+      <Pad Id="ProjectPad">
+        <State expanded="True">
+          <Node name="tvision" expanded="True">
+            <Node name="d" expanded="True">
+              <Node name="win32" expanded="True" />
+              <Node name="tasklist.d" selected="True" />
+            </Node>
+            <Node name="TVision" expanded="True" />
+          </Node>
+        </State>
+      </Pad>
+    </Pads>
+  </MonoDevelop.Ide.Workbench>
+  <MonoDevelop.Ide.DebuggingService.Breakpoints>
+    <BreakpointStore />
+  </MonoDevelop.Ide.DebuggingService.Breakpoints>
+  <MonoDevelop.Ide.DebuggingService.PinnedWatches />
+</Properties>

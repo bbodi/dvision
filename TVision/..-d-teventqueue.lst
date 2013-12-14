@@ -1,0 +1,174 @@
+       |module teventqueue;
+       |
+       |import tevent;
+       |import tgkey;
+       |import tvconfig;
+       |import ticks;
+       |
+       |struct TEventQueue {
+       |        static TMouse mouse = null;
+       |        // SET: egcs gets upset if we partially initialize structures and egcs
+       |        // 2.91.66 even crash under Linux (not in DOS, but prints "(null)").
+       |        static TEvent[eventQSize] eventQueue;
+       |        static TEvent* eventQHead;
+       |        static TEvent* eventQTail;
+       |        static this() {
+      1|                eventQHead = eventQueue.ptr;
+      1|                eventQTail = eventQueue.ptr;
+       |        }
+       |        static bool mouseIntFlag = false;
+       |        
+       |        static ushort eventCount = 0;
+       |        
+       |        static bool mouseEvents  = false;
+       |        static bool mouseReverse = false;
+       |        static int doubleDelay = 8;
+       |        static int repeatDelay = 8;
+       |        static int autoTicks = 0;
+       |        static int autoDelay = 0;
+       |        
+       |        static MouseEventType lastMouse;
+       |        static MouseEventType curMouse;
+       |        static MouseEventType downMouse;
+       |        static int downTicks = 0;
+       |
+       |        static int TEventQueue_suspended = 1;
+       |
+       |        static void init(int screenCols, int screenRows) {
+0000000|                eventQueue[] = TEvent();
+0000000|                resume(screenCols, screenRows);
+       |        }
+       |        
+       |        static void resume(int screenCols, int screenRows) {
+0000000|                if (!TEventQueue_suspended) 
+0000000|                        return;
+       |                // SET: We resumed, no matters if mouse fails or not
+0000000|                TEventQueue_suspended = 0;
+0000000|                TGKey.resume();
+0000000|                mouseEvents = false;
+0000000|                if( !mouse )
+0000000|                        mouse = new TMouse();
+0000000|                if( mouse.present() == false )
+0000000|                        mouse.resume();
+0000000|                if( mouse.present() == false )
+0000000|                        return;
+0000000|                mouse.getEvent( curMouse );
+0000000|                lastMouse = curMouse;
+       |                
+0000000|                mouseEvents = true;
+       |                //mouse.setRange( TScreen.getCols()-1, TScreen.getRows()-1 );
+0000000|                mouse.setRange( screenCols-1, screenRows-1 );
+       |        }
+       |
+       |        static void suspend() {
+0000000|                if (TEventQueue_suspended)
+0000000|                        return;
+0000000|                if (mouse.present())
+0000000|                        mouse.suspend();
+       |                /* RH: I think here is the right place for clearing the
+       |     buffer */
+0000000|                TGKey.clear();
+0000000|                TGKey.suspend();
+0000000|                TEventQueue_suspended = 1;
+       |        }
+       |        
+       |        ~this() {
+0000000|                suspend();
+       |        }
+       |        
+       |        const AUTO_DELAY_VAL = 1;
+       |        
+       |        static void getMouseEvent( ref TEvent ev ) {
+0000000|                if( mouseEvents == true ) {
+0000000|                        getMouseState( ev );
+0000000|                        if( ev.mouse.buttons == 0 && lastMouse.buttons != 0 ) {
+0000000|                                ev.what = evMouseUp;
+       |                                //            int buttons = lastMouse.buttons;
+0000000|                                lastMouse = ev.mouse;
+       |                                //            ev.mouse.buttons = buttons;
+0000000|                                return;
+       |                        }
+       |                        
+0000000|                        if( ev.mouse.buttons != 0 && lastMouse.buttons == 0 ) {
+0000000|                                bool sameButtonPressed = ev.mouse.buttons == downMouse.buttons;
+0000000|                                bool onSamePos = ev.mouse.where == downMouse.where;
+0000000|                                bool inShortTime = ev.what - downTicks <= doubleDelay;
+0000000|                                if( sameButtonPressed && onSamePos && inShortTime) {
+0000000|                                        ev.mouse.doubleClick = true;
+       |                                }
+       |                                
+0000000|                                downMouse = ev.mouse;
+0000000|                                autoTicks = downTicks = ev.what;
+0000000|                                autoDelay = repeatDelay;
+0000000|                                bool wheeled = (ev.mouse.buttons & (mbButton4 | mbButton5)) != 0;
+0000000|                                if (wheeled) {
+0000000|                                        ev.what = evMouseWheel;
+       |                                } else {
+0000000|                                        ev.what = evMouseDown;
+       |                                }
+0000000|                                lastMouse = ev.mouse;
+0000000|                                return;
+       |                        }
+       |                        
+0000000|                        ev.mouse.buttons = lastMouse.buttons;
+       |                        
+0000000|                        if( ev.mouse.where != lastMouse.where ) {
+0000000|                                ev.what = evMouseMove;
+0000000|                                lastMouse = ev.mouse;
+0000000|                                return;
+       |                        }
+       |                        
+0000000|                        auto deltaTick = ev.what - autoTicks;
+0000000|                        if( ev.mouse.buttons != 0 && deltaTick > autoDelay ) {
+0000000|                                autoTicks = ev.what;
+0000000|                                autoDelay = AUTO_DELAY_VAL;
+0000000|                                ev.what = evMouseAuto;
+0000000|                                lastMouse = ev.mouse;
+0000000|                                return;
+       |                        }
+       |                }
+       |                
+0000000|                ev.what = evNothing;
+       |        }
+       |        
+       |        static void getMouseState( ref TEvent ev ) {
+0000000|                if( eventCount == 0 ) {
+0000000|                        TMouse.getEvent(ev.mouse);
+0000000|                        ev.what = CLY_Ticks();
+       |                }
+       |                else {
+0000000|                        ev = *eventQHead;
+0000000|                        if( ++eventQHead >= eventQueue.ptr + eventQSize )
+0000000|                                eventQHead = eventQueue.ptr;
+0000000|                        eventCount--;
+       |                }
+0000000|                if( mouseReverse != false && ev.mouse.buttons != 0 && ev.mouse.buttons != 3 )
+0000000|                        ev.mouse.buttons ^= 3;
+       |        }
+       |
+       |        version(TVCompf_djgpp) {
+       |                //#include <tv/dos/mouse.h>
+       |        
+       |                static void mouseInt()
+       |                {
+       |                        int buttonPress;
+       |                        
+       |                        if (THWMouseDOS.getRMCB_InfoDraw(buttonPress))
+       |                                mouseIntFlag=true;
+       |                        if (buttonPress && eventCount<eventQSize) {
+       |                                eventQTail.what = CLY_Ticks();
+       |                                eventQTail.mouse=curMouse;
+       |                                if (++eventQTail>=eventQueue+eventQSize)
+       |                                        eventQTail=eventQueue;
+       |                                eventCount++;
+       |                        }
+       |                        
+       |                        curMouse = THWMouseDOS.intEvent;
+       |                }
+       |        } else {
+       |                static void mouseInt()
+       |                {
+       |                }
+       |        }
+       |}
+..\d\teventqueue.d is 2% covered

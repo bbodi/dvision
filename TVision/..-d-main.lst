@@ -1,0 +1,249 @@
+       |module main;
+       |
+       |import core.time;
+       |import std.stdio;
+       |import std.array;
+       |import std.conv;
+       |import std.algorithm;
+       |import std.string;
+       |import std.datetime;
+       |import std.stream;
+       |
+       |import tvision;
+       |
+       |static short winNumber = 0;          // initialize window number
+       |const int maxLineLength = maxViewWidth+1;
+       |const int maxLines      = 100;
+       |
+       |import tasklist;
+       |
+       |struct DialogData {
+       |        int checkBoxData;
+       |        int radioButtonData;
+       |        string inputData;
+       |}
+       |
+       |DialogData demoData;
+       |
+       |
+       |class MainMenu : TWindow {
+       |
+0000000|        this(TRect bounds) {
+0000000|                super(bounds, "Danki", ++winNumber);
+0000000|                TRect rr = getClipRect();    // get exposed area
+0000000|                rr.grow(-1, -1);             // make interior fit inside window frame
+       |
+0000000|                TScrollBar vScrollBar =
+       |                        standardScrollBar( sbVertical | sbHandleKeyboard );
+0000000|                TScrollBar hScrollBar =
+       |                        standardScrollBar( sbHorizontal |  sbHandleKeyboard );
+       |
+       |        }
+       |
+       |        override void handleEvent(ref TEvent event) {
+0000000|                super.handleEvent(event); 
+0000000|                bool itemSelected = event.what == evBroadcast && event.message.command == cm.ListItemSelected;
+       |                // clearEvent( event );
+       |        }
+       |
+       |        override ref immutable(TPalette) getPalette() const {
+0000000|            return tdialog.palette1;
+       |        }
+       |
+       |}
+       |
+       |class Demo : TApplication  {
+       |        
+       |
+       |        MainMenu window;
+       |
+0000000|        this() {
+0000000|                demoData.checkBoxData = 1;
+0000000|                demoData.inputData = "Task name";
+0000000|                demoData.radioButtonData = 2;
+       |
+0000000|                window = new MainMenu (TRect(0, 0, 30, 20));
+0000000|                deskTop.insert(window); // put window into desktop and draw it
+       |        }
+       |
+       |        override void idle() {
+0000000|                super.idle();
+       |                //timeSinceStart = cast(DateTime)std.datetime.Clock.currTime() - timeTaskStarted;
+       |        }
+       |
+       |        override TStatusLine createStatusLine(TRect r) const {
+0000000|        r.a.y = r.b.y - 1;
+0000000|        return new TStatusLine( r,
+       |                                                           [TStatusDef( 0, 0xFFFF, [
+       |                                                                   TStatusItem( "~Alt-X~ Exit", KeyCode.kbAltX, cm.Quit ),
+       |                                                                   TStatusItem( "~Ctrl-N~ New", KeyCode.kbCtrlN, cm.NewTask ),
+       |                                                                TStatusItem( "~Ctrl-S~ New subtask", KeyCode.kbCtrlS, cm.NewSubTask ),
+       |                                                                   TStatusItem( "~Ctrl-S~ Start/Stop", KeyCode.kbCtrlS, cm.Start ),
+       |                                                           ]
+       |                                                                                   )]);
+       |        }
+       |
+       |        override TMenuBar createMenuBar( TRect r ) const {
+0000000|                r.b.y = r.a.y + 1;    // set bottom line 1 line below top line
+0000000|                TSubMenu file = new TSubMenu( "~F~ile", KeyCode.kbAltF );
+0000000|                file.add(new TMenuItem( "~A~bout",  cm.About,   KeyCode.kbF1, hcNoContext, "F1" ));
+0000000|                file.add(new TMenuItem( "~O~pen", cm.MyFileOpen, KeyCode.kbF3, hcNoContext, "F3" ));
+0000000|                file.add(new TMenuItem( "~N~ew",  cm.MyNewWin,   KeyCode.kbF4, hcNoContext, "F4" ));
+0000000|                file.add(TMenuItem.newLine());
+0000000|                file.add(new TMenuItem( "E~x~it", cm.Quit, KeyCode.kbAltX, hcNoContext, "Alt-X" ));
+       |        
+0000000|                TSubMenu win = new TSubMenu( "~W~indow", KeyCode.kbAltW );
+0000000|                win.add(new TMenuItem( "~N~ext", cm.Next,     KeyCode.kbF6, 0x1FFFF, "F6" ));
+0000000|                win.add(new TMenuItem( "~Z~oom", cm.Zoom,     KeyCode.kbF5, hcNoContext, "F5" ));
+       |
+0000000|                TSubMenu progrbar = new TSubMenu( "~P~rogressBar", KeyCode.kbAltW );
+0000000|                win.add(new TMenuItem( "~N~ext", cm.Next,     KeyCode.kbF6, 0x1FFFF, "F6" ));
+0000000|                win.add(new TMenuItem( "~Z~oom", cm.Zoom,     KeyCode.kbF5, hcNoContext, "F5" ));
+       |
+0000000|                file.add(win);
+0000000|                file.add(new TMenuItem("~P~rogress Bar", cm.StatusCmd, KeyCode.kbAltL, hcNoContext));
+0000000|                return new TMenuBar(r, file);
+       |        }
+       |
+       |        override void handleEvent(ref TEvent event) {
+0000000|                super.handleEvent(event); 
+0000000|                if( event.what == evCommand ) {
+0000000|                        if (event.message.command == cm.NewTask) {
+0000000|                        } else if (event.message.command == cm.NewSubTask) {
+       |                        } else {
+0000000|                                return;
+       |                        }
+0000000|                        clearEvent( event );
+       |        }
+       |        }
+       |
+       |
+       |        private void newFileDialog() {
+0000000|                        TFileDialog pd = new TFileDialog( "*","Open a File", "~N~ame", fdOpenButton, 100 );
+0000000|                        Command control = deskTop.execView( pd );
+0000000|                        if (control != cm.Cancel) {
+0000000|                                myNewWindow(pd.getFileName());
+       |                        }
+0000000|                        return;
+       |        }
+       |
+       |        private void newTaskDialog() {
+0000000|                TDialog pd = new TDialog( TRect( 20, 6, 120, 40), "New Task" );
+0000000|                if( pd is null) 
+0000000|                        return;
+0000000|                TView b = new TCheckBoxes( TRect( 3, 3, 16, 6),
+       |                                                                          new TSItem( "~H~varti",
+       |                                                                                                 new TSItem( "~T~ilset",
+       |                                                                                                                        new TSItem( "~J~arlsberg", null ))));
+0000000|                        pd.insert( b );
+       |
+0000000|                        pd.insert( new TLabel( TRect( 2, 2, 10, 3), "Cheeses", b ));
+       |
+       |                        //b = new TRadioButtons( TRect( 22, 3, 34, 6),
+       |                        //                                new TSItem( "~S~olid",
+       |                        //                                               new TSItem( "~R~unny",
+       |                        //                                                              new TSItem( "~M~elted", 0 )
+       |                        //                                                              )));
+       |                        //pd.insert( b );
+       |
+0000000|                        pd.insert( new TLabel( TRect( 21, 2, 33, 3), "Consistency", b ));
+       |
+0000000|                        pd.insert( new TButton( TRect( 15, 10, 25, 12 ), "~O~K", cm.Ok,
+       |                                                                   bfDefault ));
+0000000|                        pd.insert( new TButton( TRect( 28, 10, 38, 12 ), "~C~ancel", cm.Cancel,
+       |                                                                   bfNormal ));
+       |
+0000000|                        b = new TRadioButtons( TRect( 22, 3, 34, 6),
+       |                                                                  new TSItem( "~S~olid",
+       |                                                                                         new TSItem( "~R~unny",
+       |                                                                                                                new TSItem( "~M~elted", null )
+       |                                                                                                                        )));
+0000000|                        pd.insert( b );
+       |
+0000000|                        TInputLine inp = new TInputLine( TRect( 3, 8, 37, 9 ), 128 );
+       |                        //inp.setValidator(data => data[data.length-1] == 'a');
+0000000|                        pd.insert( inp );
+0000000|                        pd.insert( new TLabel( TRect( 2, 7, 24, 8 ), "Task name:", b ));
+       |
+0000000|                        TScrollBar sb = new TScrollBar( TRect( 30, 13, 31, 20 ) );
+0000000|                        pd.insert( sb );
+0000000|                        pd.insert( new TLabel( TRect( 2, 12, 24, 13 ), "Parent:", b ));
+       |                
+0000000|                        pd.setData(cast(void*)&demoData);
+0000000|                        inp.setState(sfFocused, true);
+0000000|                        Command control = deskTop.execView( pd );
+0000000|                        if (control != cm.Cancel) {
+0000000|                                pd.getData(cast(void*)&demoData);
+       |                        }
+       |        }
+       |
+       |
+       |        void myNewWindow(string fileName) {
+0000000|                TRect r = TRect( 0, 0, 26, 7 );           // set initial size and position
+       |
+       |                /* SS: micro change here */
+       |
+       |                //r.move( random(53), random(16) ); // randomly move around screen
+       |                //r.move( random() % 53, random() % 16 ); // randomly move around screen
+       |                
+       |
+       |
+0000000|                auto topMenuWin = new MenuWindow(TRect(0, 0, 19, 7));
+0000000|                auto topMenuWinItems = new TRadioButtons( TRect( 1, 1, 18, 4),
+       |                                                          new TSItem( "~B~udget",
+       |                                                                new TSItem( "~R~eports",
+       |                                                                        new TSItem( "~A~ll accounts", null )
+       |                                                                                )));
+0000000|                topMenuWin.insert( topMenuWinItems );
+0000000|                deskTop.insert(topMenuWin);
+       |
+       |
+       |                import budget;
+0000000|                Category cat = Category("TestCategory");
+0000000|                Persely persely = Persely("Malac");
+0000000|                User user = User([persely], [cat]);
+0000000|                TSItem* createAccountMenuChain(int perselyIndex) {
+0000000|                        if (perselyIndex >= user.perselyek.length) {
+0000000|                                return null;
+       |                        }
+0000000|                        auto persely = user.perselyek[perselyIndex];
+0000000|                        return new TSItem(persely.name, createAccountMenuChain(perselyIndex + 1));
+       |                }
+0000000|                auto budgetAccountsWin = new MenuWindow(TRect(0, 9, 19, 19), "Budget accounts");
+0000000|                int accountListHeight = 1 + user.perselyek.length;
+0000000|                auto accountItems = new TRadioButtons(TRect( 1, 1, 18, accountListHeight), createAccountMenuChain(0));
+0000000|                budgetAccountsWin.insert(accountItems);
+0000000|                auto addAccountBtn = new TButton(1, accountListHeight, "+ Add account", cm.Null, bfDefault);
+0000000|                budgetAccountsWin.insert(addAccountBtn);
+0000000|                deskTop.insert(budgetAccountsWin);
+       |        }
+       |};
+       |
+       |class MenuWindow : TWindow {
+       |
+0000000|        this(in TRect bounds, string name = null) {
+0000000|                super(bounds, name, 0);
+0000000|                flags =  0;
+0000000|                state = sfVisible;
+0000000|            options |= ofSelectable | ofTopSelect;
+0000000|            growMode = gfGrowAll | gfGrowRel;
+0000000|            eventMask |= evMouseUp;
+       |        }
+       |
+       |        override ref immutable(TPalette) getPalette() const {
+0000000|            return tdialog.palette1;
+       |        }
+       |}
+       |
+       |void main() {
+0000000|        Demo a = new Demo();
+0000000|        a.run();
+0000000|        std.stream.File file = new std.stream.File("tasks.db", FileMode.OutNew);
+0000000|        auto data = new Elem("Tasks");
+       |        //data.taskId.set(taskId);
+       |        //tree.write(data);
+0000000|        auto str = data.toString();
+0000000|        file.write(str);
+0000000|        file.close();
+       |}
+..\d\main.d is 0% covered

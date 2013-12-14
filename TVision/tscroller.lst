@@ -1,0 +1,160 @@
+       |module tscroller;
+       |
+       |import tview;
+       |import tscrollbar;
+       |
+       |const ubyte[] cpScroller = cast(ubyte[])"\x06\x07";
+       |
+       |private immutable TPalette palette = immutable(TPalette)( cpScroller);
+       |
+       |class TScroller : TView {
+       |
+       |        
+       |
+       |        static int defaultWheelStep = 5;
+       |        int wheelStep;
+       |
+       |        protected ubyte drawLock;
+       |    protected bool drawFlag;
+       |    protected TScrollBar hScrollBar;
+       |    protected TScrollBar vScrollBar;
+       |    protected TPoint delta;
+       |    protected TPoint limit;
+       |
+0000000|        this( in ref TRect bounds, TScrollBar aHScrollBar, TScrollBar aVScrollBar) {
+0000000|                super(bounds);
+0000000|                drawLock = 0;
+0000000|                drawFlag = false;
+0000000|                hScrollBar = aHScrollBar;
+0000000|                vScrollBar = aVScrollBar;
+0000000|                delta.x = delta.y = limit.x = limit.y = 0;
+0000000|                options |= ofSelectable;
+0000000|                eventMask |= evBroadcast;
+0000000|                wheelStep = defaultWheelStep;
+       |                // This class can be "Braille friendly"
+0000000|                if (TScreen.getShowCursorEver())
+0000000|                        state |= sfCursorVis;
+       |        }
+       |
+       |        override void shutDown() {
+0000000|                hScrollBar = null;
+0000000|                vScrollBar = null;
+0000000|                TView.shutDown();
+       |        }
+       |
+       |        override void changeBounds( in TRect bounds ) {
+0000000|                setBounds(bounds);
+0000000|                drawLock++;
+0000000|                setLimit(limit.x, limit.y);
+0000000|                drawLock--;
+0000000|                drawFlag = false;
+0000000|                drawView();
+       |        }
+       |
+       |        private void checkDraw() {
+0000000|                if( drawLock == 0 && drawFlag != false ) {
+0000000|                        drawFlag = false;
+0000000|                        drawView();
+       |        }
+       |        }
+       |
+       |        override ref immutable(TPalette) getPalette() const {
+0000000|                return palette;
+       |        }
+       |
+       |        override void handleEvent(ref TEvent event) {
+0000000|                TView.handleEvent(event);
+       |
+0000000|                if( event.what == evBroadcast &&
+0000000|                   event.message.command == cm.ScrollBarChanged &&
+0000000|                   ( cast(TScrollBar)event.message.infoPtr is hScrollBar ||
+0000000|            cast(TScrollBar)event.message.infoPtr is vScrollBar )
+       |                   )
+0000000|                        scrollDraw();
+0000000|                else if( vScrollBar && event.what == evMouseWheel) {
+0000000|                        if( event.mouse.buttons == mbButton4 ) {
+0000000|                                vScrollBar.setValue( vScrollBar.value - wheelStep );
+0000000|                                clearEvent( event );
+0000000|                        } else if( event.mouse.buttons==mbButton5 ) {
+0000000|                                vScrollBar.setValue( vScrollBar.value + wheelStep );
+0000000|                                clearEvent( event );
+       |                        }
+       |                }
+       |        }
+       |
+       |        void scrollDraw() {
+0000000|                TPoint  d;
+       |
+0000000|                if( hScrollBar !is null ) {
+0000000|                        d.x = hScrollBar.value;
+       |                } else {
+0000000|                        d.x = 0; 
+       |                }
+       |
+0000000|                if( vScrollBar !is null )
+0000000|                        d.y = vScrollBar.value;
+       |                else
+0000000|                        d.y = 0;
+       |
+0000000|                if( d.x != delta.x || d.y != delta.y ) {
+0000000|                        setCursor( cursor.x + delta.x - d.x, cursor.y + delta.y - d.y );
+0000000|                        delta = d;
+0000000|                        if( drawLock != 0 )
+0000000|                                drawFlag = true;
+       |                        else
+0000000|                                drawView();
+       |        }
+       |        }
+       |
+       |        void scrollTo( int x, int y ) {
+0000000|                drawLock++;
+0000000|                if( hScrollBar !is null )
+0000000|                        hScrollBar.setValue(x);
+0000000|                if( vScrollBar !is null )
+0000000|                        vScrollBar.setValue(y);
+0000000|                drawLock--;
+0000000|                checkDraw();
+       |        }
+       |
+       |        void setLimit( int x, int y ) {
+0000000|                limit.x = x;
+0000000|                limit.y = y;
+0000000|                drawLock++;
+0000000|                if( hScrollBar !is null )
+0000000|                        hScrollBar.setParams( hScrollBar.value,
+       |                                                                  0,
+       |                                                                  x - size.x,
+       |                                                                  size.x,
+       |                                                                  1
+       |                                                                  );
+0000000|                if( vScrollBar !is null )
+0000000|                        vScrollBar.setParams( vScrollBar.value,
+       |                                                                  0,
+       |                                                                  y - size.y,
+       |                                                                  size.y,
+       |                                                                  1
+       |                                                                  );
+0000000|                drawLock--;
+0000000|                checkDraw();
+       |        }
+       |
+       |        void showSBar( TScrollBar sBar ) {
+0000000|                if( sBar !is null ) {
+0000000|                        if( getState(sfActive | sfSelected) != 0 ) {
+0000000|                                sBar.show();
+       |                        } else {
+0000000|                                sBar.hide();
+       |                        }
+       |        }
+       |        }
+       |
+       |        override void setState( ushort aState, bool enable ) {
+0000000|                TView.setState(aState, enable);
+0000000|                if( (aState & (sfActive | sfSelected)) != 0 ) {
+0000000|                        showSBar(hScrollBar);
+0000000|                        showSBar(vScrollBar);
+       |        }
+       |        }
+       |
+       |}
+tscroller.d is 0% covered

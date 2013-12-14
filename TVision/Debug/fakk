@@ -1,0 +1,65 @@
+core.exception.AssertError@tframe(24): unittest failure
+----------------
+0x00438A69 in onAssertErrorMsg
+0x004237B8 in tframeTFrame__unittestL19_1 at D:\D\projects\tvision\TVision\..\tframe.d(27)
+0x00424900 in void tframe.__modtest()
+0x00446B05 in coreruntimerunModuleUnitTests__foreachbody349
+0x0044F667 in rtminfomoduleinfos_apply__foreachbody554
+0x0043C999 in _d_run_main
+0x0043774C in main
+0x74C033AA in BaseThreadInitThunk
+0x772B9EF2 in RtlInitializeExceptionChain
+0x772B9EC5 in RtlInitializeExceptionChain
+ : 32
+ : 32
+ : 32
+√: 195
+Ä: 128
+ : 32
+¬: 194
+≥: 179
+√: 195
+ö: 154
+√: 195
+É: 131
+ : 32
+√: 195
+ô: 153
+√: 195
+Ñ: 132
+√: 195
+Å: 129
+¬: 194
+ø: 191
+¬: 194
+¥: 180
+√: 195
+Ç: 130
+√: 195
+Ö: 133
+ : 32
+ : 32
+ : 32
+√: 195
+à: 136
+ : 32
+¬: 194
+∫: 186
+√: 195
+â: 137
+√: 195
+á: 135
+ : 32
+¬: 194
+º: 188
+√: 195
+ç: 141
+√: 195
+è: 143
+¬: 194
+ª: 187
+¬: 194
+∂: 182
+√: 195
+ë: 145
+ : 32

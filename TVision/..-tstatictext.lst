@@ -1,0 +1,78 @@
+       |module tstatictext;
+       |
+       |import tvision;
+       |
+       |immutable ubyte[] cpStaticText = [0x06];
+       |immutable TPalette palette = immutable(TPalette)( cpStaticText);
+       |
+       |class TStaticText : TView {
+       |
+       |        string text;
+       |
+0000000|        this( const TRect bounds, in char[] aText ) {
+0000000|                super(bounds);
+0000000|                text = aText.idup;
+       |        }
+       |
+       |        override void draw() {
+0000000|            TDrawBuffer b;
+0000000|            int maxLen = size.x*size.y;
+       |            // +2 to hold the \x3 center char (SET)
+       |
+0000000|            ushort color = getColor(1);
+0000000|            string str = text;
+0000000|            int len = text.length;
+       |            // Check if the size if bigger than allowed and the extra char isn't the
+       |            // center char (SET)
+0000000|            if ((len > maxLen) && str[0] != 3) {
+0000000|                len--;
+0000000|                str = text[0..len];
+       |                }
+0000000|            int p = 0;
+0000000|            int y = 0;
+0000000|            bool center = false;
+0000000|            int i, j;
+0000000|            while (y < size.y) {
+0000000|                b.moveChar(0, ' ', color, size.x);
+0000000|                if (p < len) {
+0000000|                    if (str[p] == 3) {
+0000000|                        center = true;
+0000000|                        ++p;
+       |                                }
+0000000|                    i = p;
+       |                    do {
+0000000|                       j = p;
+0000000|                       while ((p < len) && (str[p] == ' ')) 
+0000000|                           ++p;
+0000000|                       while ((p < len) && (str[p] != ' ') && (str[p] != '\n'))
+0000000|                           ++p;
+0000000|                                } while ((p < len) && (p < i + size.x) && (str[p] != '\n'));
+0000000|                    if (p > i + size.x) {
+0000000|                        if (j > i)
+0000000|                            p = j;
+       |                        else
+0000000|                            p = i + size.x;
+       |                                }
+0000000|                    if (center)
+0000000|                                        j = (size.x - p + i) / 2 ;
+       |                    else 
+0000000|                                        j = 0;
+0000000|                    b.moveBuf(j, str[i..$], color, (p - i));
+0000000|                    while ((p < len) && (str[p] == ' '))
+0000000|                        p++;
+0000000|                    if ((p < len) && (str[p] == '\n')) {
+0000000|                        center = false;
+0000000|                        p++;
+0000000|                        if ((p < len) && (str[p] == 10))
+0000000|                            p++;
+       |                                }
+       |                        }
+0000000|                writeLine(0, y++, size.x, 1, b);
+       |                }
+       |        }
+       |
+       |        override ref immutable(TPalette) getPalette() const {
+0000000|            return palette;
+       |        }
+       |}
+..\tstatictext.d is 0% covered

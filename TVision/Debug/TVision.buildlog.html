@@ -1,0 +1,109 @@
+<html><head><META HTTP-EQUIV="Content-Type" content="text/html">
+</head><body><pre>
+<table width=100% bgcolor=#CFCFE5><tr><td>
+	<font face=arial size=+3>Build Log</font>
+</table>
+<table width=100% bgcolor=#DFDFE5><tr><td><font face=arial size=+2>
+Building Debug\TVision.exe
+</font></table>
+<table width=100% bgcolor=#EFEFE5><tr><td><font face=arial size=+1>
+Command Line
+</font></table>
+set PATH=D:\D\dmd\dmd2\windows\\bin;C:\Program Files\Microsoft SDKs\Windows\v7.1\\\bin;%PATH%
+
+echo ..\d\win32\win32clip.d &gt;Debug\TVision.build.rsp
+echo ..\d\win32\win32key.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\win32\win32mouse.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\win32\win32scr.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\budget.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\codepage.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\commands.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\common.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\configfile.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\grid.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\main.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\msgbox.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\osclipboard.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\progressbar.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\tapplication.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\tasklist.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\tbackground.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\tbutton.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\tcheckboxes.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\tcluster.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\tcollection.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\tcommand.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\tdesktop.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\tdialog.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\tdisplay.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\tdrawbuffer.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\teditor.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\tevent.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\teventqueue.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\tfiledialog.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\tfileinfopane.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\tfilelist.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\tframe.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\tgkey.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\tgroup.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\thistory.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\thistoryviewer.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\thistorywindow.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\ticks.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\tinputline.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\tlabel.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\tlistbox.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\tlistviewer.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\tmenu.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\tobject.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\tpalette.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\tpartitiontree.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\tpoint.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\tprogram.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\tradiobuttons.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\trect.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\tscreen.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\tscrollbar.d &gt;&gt;Debug\TVision.build.rsp
+echo tscroller.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\tsitem.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\tsortedcollection.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\tsortedlistbox.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\tstatictext.d &gt;&gt;Debug\TVision.build.rsp
+echo tstatusline.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\tstreamable.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\tstringcollection.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\ttypes.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\tvalidator.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\tvconfig.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\tview.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\tvision.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\twindow.d &gt;&gt;Debug\TVision.build.rsp
+echo ..\d\views.d &gt;&gt;Debug\TVision.build.rsp
+
+dmd -g -de -unittest -debug -cov -X -Xf&quot;Debug\TVision.json&quot; -Id:\D\projects\tvision\d\ -version=TVOS_Win32 -deps=&quot;Debug\TVision.dep&quot; -c -of&quot;Debug\TVision.obj&quot; @Debug\TVision.build.rsp
+if errorlevel 1 goto reportError
+
+set LIB=
+echo. &gt; Debug\TVision.build.lnkarg
+echo &quot;Debug\TVision.obj&quot;,&quot;Debug\TVision.exe_cv&quot;,&quot;Debug\TVision.map&quot;,user32.lib+ &gt;&gt; Debug\TVision.build.lnkarg
+echo kernel32.lib/NOMAP/CO/NOI &gt;&gt; Debug\TVision.build.lnkarg
+
+&quot;d:\d\VisualD\pipedmd.exe&quot; -deps Debug\TVision.lnkdep link.exe @Debug\TVision.build.lnkarg
+if errorlevel 1 goto reportError
+if not exist &quot;Debug\TVision.exe_cv&quot; (echo &quot;Debug\TVision.exe_cv&quot; not created! &amp;&amp; goto reportError)
+echo Converting debug information...
+&quot;d:\d\VisualD\cv2pdb\cv2pdb.exe&quot; &quot;Debug\TVision.exe_cv&quot; &quot;Debug\TVision.exe&quot;
+if errorlevel 1 goto reportError
+if not exist &quot;Debug\TVision.exe&quot; (echo &quot;Debug\TVision.exe&quot; not created! &amp;&amp; goto reportError)
+
+goto noError
+
+:reportError
+echo Building Debug\TVision.exe failed!
+
+:noError
+<table width=100% bgcolor=#EFEFE5><tr><td><font face=arial size=+1>
+Output
+</font></table>
+Converting debug information...
+</body></html>

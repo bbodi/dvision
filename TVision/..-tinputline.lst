@@ -1,0 +1,537 @@
+       |module tinputline;
+       |
+       |import std.algorithm : min, max;
+       |import std.typecons;
+       |
+       |import tvision;
+       |import osclipboard;
+       |
+       |const ilValidatorBlocks = 1;
+       |
+       |private wchar rightArrow;
+       |private wchar leftArrow;
+       |
+       |private immutable ubyte[] cpInputLine = [0x13, 0x13, 0x14, 0x15];
+       |private immutable TPalette palette = immutable(TPalette)(cpInputLine);
+       |
+       |enum Select {
+       |        All, None
+       |}
+       |
+       |alias bool delegate(in char[] inputLineData) Validator;
+       |
+       |class TInputLine : TView {
+       |
+       |        private struct State {
+       |                int curPos;
+       |                int firstPos;
+       |                int selStart;
+       |                int selEnd;
+       |                char[] data;
+       |                int dataLen;
+       |
+       |                void set(in ref State other) {
+0000000|                        dataLen = other.dataLen;
+0000000|                        data = other.data.dup;
+0000000|                        curPos = other.curPos;
+0000000|                        firstPos = other.firstPos;
+0000000|                        selStart = other.selStart;
+0000000|                        selEnd = other.selEnd;
+       |                }
+       |        }
+       |
+0000000|        protected @property auto curPos() const { return curState.curPos; }
+0000000|        protected @property auto firstPos() const { return curState.firstPos; }
+0000000|        protected @property auto selStart() const { return curState.selStart; }
+0000000|        protected @property auto selEnd() const { return curState.selEnd; }
+0000000|        protected @property auto data() { return curState.data; }
+0000000|        protected @property auto dataLen() const { return curState.dataLen; }
+       |
+       |        string getData() const {
+0000000|                return curState.data.idup;
+       |        }
+       |
+0000000|        protected @property void curPos(int param) { curState.curPos = param; }
+0000000|        protected @property void firstPos(int param) { curState.firstPos = param; }
+0000000|        protected @property void selStart(int param) { curState.selStart = param; }
+0000000|        protected @property void selEnd(int param) { curState.selEnd = param; }
+0000000|        protected @property void data(in char[] param) { curState.data = param.dup; }
+0000000|        protected @property void dataLen(int param) { curState.dataLen = param; }
+       |
+       |
+       |        private Validator validator;
+       |        protected State curState, oldState;
+       |        private bool hideContent;
+       |        // IMHO exposing these two is a very bad idea, I added a couple of members to
+       | // work with them: setDataFromStr & getData. All TV code uses these new
+       | // members. If we don't hide them then we must compute the string length all
+       | // the time. SET.
+       |         private int maxLen;
+       |
+0000000|         this(in TRect bounds, int aMaxLen, Validator aValid = null) {
+0000000|                super(bounds);
+0000000|                maxLen = aMaxLen-1;
+0000000|                validator = aValid;
+0000000|                state |= sfCursorVis;
+0000000|                options |= ofSelectable | ofFirstClick;
+0000000|                modeOptions = defaultModeOptions;
+0000000|                hideContent = false;
+       |         }
+       |
+       |         override void draw() {
+0000000|                int l, r;
+0000000|                TDrawBuffer b;
+       |                 
+0000000|                ushort color=(state & sfFocused) ? getColor(2) : getColor(1);
+       |                 
+0000000|                b.moveChar(0,' ',color,size.x);
+0000000|                if (hideContent) {
+0000000|                        int rest = dataLen - firstPos;
+0000000|                        if (rest>0)
+0000000|                       b.moveChar(1,'*',color,min(size.x-2,rest));
+       |                } else {
+0000000|                        b.moveStr(1, data[firstPos..$], color, size.x-2);
+       |                }
+       |                 
+0000000|                if (canScroll(1))
+0000000|                        b.moveChar(size.x-1, /*rightArrow*/ 0x25b6, cast(ubyte)getColor(4),1);
+0000000|                if (canScroll(-1))
+0000000|                        b.moveChar(0, /*leftArrow*/ 0x25c0,cast(ubyte)getColor(4),1);
+0000000|                if (state & sfSelected) {
+0000000|                        l = selStart - firstPos;
+0000000|                    r = selEnd - firstPos;
+0000000|                    l = max(0,l);
+0000000|                    r = min(size.x-2,r);
+0000000|                    if (l < r)
+0000000|                       b.moveChar(l+1,0,cast(ubyte)getColor(3),r-l);
+       |                   }
+0000000|                writeLine(0,0,size.x,size.y,b);
+0000000|                setCursor(curPos-firstPos+1,0);
+       |        }
+       |
+       |        void setHide(bool val) {
+0000000|                hideContent=val; 
+       |        }
+       |
+       |        override void getData(void *rec) {
+0000000|                *cast(char[]*)rec = curState.data;
+       |        }
+       |
+       |        override void setData(void *rec) {
+0000000|                data = *cast(string*)rec;
+0000000|                dataLen = data.length;
+0000000|                selectAll(Select.All);
+       |        }
+       |
+       |        override uint dataSize() {
+0000000|                return (char[]).sizeof;
+       |                //return data.length;
+       |                /*uint dSize=0;
+       |
+       |                if (validator)
+       |                        dSize = validator.transfer(data, null, TVTransfer.vtDataSize);
+       |                if (dSize == 0)
+       |                        dSize = maxLen+1;
+       |                return dSize*cellSize;*/
+       |        }
+       |
+       |        override ref immutable(TPalette) getPalette() const {
+0000000|                return palette;
+       |        }
+       |
+       |        uint setModeOptions(uint newOps) { 
+0000000|                uint old = modeOptions;
+0000000|                modeOptions = newOps;
+0000000|                return old; 
+       |        }
+       |        
+       |        uint getModeOptions() {
+0000000|                return modeOptions; 
+       |        }
+       | 
+       |        static uint setDefaultModeOptions(uint newOps) { 
+0000000|                uint old = defaultModeOptions; 
+0000000|                defaultModeOptions = newOps; 
+0000000|                return old; 
+       |        }
+       |
+       |        static uint getDefaultModeOptions() { 
+0000000|                return defaultModeOptions; 
+       |        }
+       |        
+       |
+       |        private void deleteSelect() {
+0000000|                if (selStart < selEnd) {
+       |                        //CLY_memcpy(data+selStart*cellSize,data+selEnd*cellSize,(dataLen-selEnd+1)*cellSize);
+0000000|                        data = data[0..selStart] ~ data[selEnd..$];
+0000000|                        dataLen = dataLen - (selEnd - selStart);
+0000000|                        curPos = selStart;
+       |                }
+       |        }
+       |
+       |        /*
+       |        Used internally to ensure the cursor is at a visible position, unselect
+       |        the text and force a draw.
+       |        */
+       |        private void makeVisible() {
+0000000|                if (firstPos > curPos)
+0000000|                        firstPos = curPos;
+0000000|                int i = curPos - size.x+2;
+0000000|                if (firstPos < i)
+0000000|                        firstPos=i;
+0000000|                drawView();
+       |        }
+       |
+       |        private bool canScroll( int delta ) {
+0000000|                if (delta < 0)
+0000000|                        return firstPos > 0;
+0000000|                else if (delta > 0)
+0000000|                        return (dataLen - firstPos + 2) > size.x;
+       |                else
+0000000|                        return false;
+       |        }
+       |
+       |        private void saveState() {
+0000000|                if (validator) {// Save data to unroll
+0000000|                        oldState.set(curState);
+       |                }
+       |        }
+       |
+       |        private void restoreState() {
+0000000|                if (validator) {// Unroll the changes
+0000000|                        curState.set(oldState);
+       |           }
+       |        }
+       |
+       |        private bool checkValid(Flag!"noAutoFill" noAutoFill) {
+0000000|                if (validator) {
+       |                // IMPORTANT!!! The validator can write more than maxLen chars.
+0000000|                        if (!validator(data, /*noAutoFill*/)) {
+0000000|                                restoreState();
+0000000|                                return false;
+       |                        } else {
+0000000|                                int newLen = data.length;//recomputeDataLen();
+0000000|                                if (curPos >= dataLen && newLen > dataLen)
+0000000|                                        curPos=newLen;
+0000000|                                dataLen=newLen;
+0000000|                                return true;
+       |                        }
+       |                }
+0000000|                return true;
+       |        }
+       |
+       |        private void assignPos(int index, int val) {
+0000000|                data[index] = cast(char)val;
+       |        }
+       |
+       |        /**[txh]********************************************************************
+       |
+       |          Description:
+       |          Inserts a character at the cursor position. If the text is currently
+       |        selected it's removed. If a validator is defined it's called. This basic
+       |        input line have a fixed size and will refuse to insert the character if
+       |        there is not enough space, but the virtual resizeData() is called giving
+       |        a chance to create variable size input lines.@*
+       |          I (SET) moved it to allow insertions from sources other than the keyboard
+       |        emulating it's behavior.
+       |          
+       |          Return: False if the validator canceled the character, otherwise True.
+       |          
+       |        ***************************************************************************/
+       |        // TODO: The validator can't be 8 bits for an Unicode class.
+       |        bool insertChar(uint value)     {
+0000000|                saveState();
+       |                // Operate
+0000000|                if (insertModeOn())
+0000000|                deleteSelect();
+       |                //if (( insertModeOn() && lineIsFull()) || (!insertModeOn() && posIsEnd()))
+       |            //  resizeData();
+       |
+0000000|                if (insertModeOn()) {
+0000000|                if (!lineIsFull()) {
+0000000|                                int to = curPos+1 + dataLen-curPos;
+0000000|                                data = data[0..curPos] ~ [cast(char)0] ~ data[curPos..$];
+       |                        /*memmove(data+(curPos+1)*cellSize,
+       |                                                data+curPos*cellSize,
+       |                                                ((dataLen-curPos)+1)*cellSize);*/
+0000000|                        dataLen = dataLen+1;
+0000000|                        if (firstPos > curPos)
+0000000|                                firstPos = curPos;
+0000000|                        assignPos(curPos,value);
+0000000|                                curPos = curPos + 1;
+       |                        }
+0000000|                } else if (dataLen==curPos) {
+0000000|                assignPos(curPos+1,0);
+0000000|                data[curPos+1]=0;
+       |                } else {
+0000000|                        if (firstPos>curPos)
+0000000|                        firstPos=curPos;
+0000000|                if (curPos==dataLen) {
+0000000|                        dataLen = dataLen + 1;
+       |                        }
+0000000|                assignPos(curPos,value);
+0000000|                        curPos = curPos + 1;
+       |                }
+       |
+0000000|                return checkValid(No.noAutoFill);
+       |        }
+       |
+       |        bool insertCharEv(ref TEvent event) {
+0000000|                TGKey.fillCharCode(event);
+       |                //printf("insertChar de Unicode: U+%04X\n",event.keyDown.charCode);
+0000000|                if (event.keyDown.charCode>=' ' && event.keyDown.charCode<0xFF00) {
+0000000|                if (!insertChar(event.keyDown.charCode))
+0000000|                                clearEvent(event);
+0000000|                        return true;
+       |                }
+0000000|                return false;
+       |        }
+       |
+       |        // TODO: Get the clipboard in unicode format
+       |        bool pasteFromOSClipboard() {
+       |                //if (sizeof(T) != 1) return false;
+       |                /*uint size,i;
+       |                T *p=(T *)TVOSClipboard.paste(1, size);
+       |                if (p) {
+       |                        for (i=0; i<size; i++) {
+       |                                insertChar(p[i]);
+       |                                selStart=selEnd=0; // Reset the selection or we will delete the last insertion
+       |                        }
+       |                        makeVisible();
+       |                return true;
+       |                }*/
+0000000|                return false;
+       |        }
+       |
+       |        void copyToOSClipboard() {
+       |         //if (sizeof(T)==1)
+0000000|            TVOSClipboard.copy(1, data[selStart..selEnd]);
+       |         // else if 2 ....
+       |         // TODO: Put to the clipboard in unicode format
+       |        }
+       |
+       |        void adjustSelectBlock(int anchor) {
+0000000|                if( curPos < anchor ) {                  
+0000000|                        selStart = curPos; 
+0000000|                        selEnd = anchor;   
+       |                } else {                  
+0000000|                        selStart = anchor; 
+0000000|                        selEnd = curPos;   
+       |                }
+       |        }
+       |
+       |        override void handleEvent(ref TEvent event) {
+0000000|                KeyCode key;
+0000000|                bool extendBlock;
+0000000|                TView.handleEvent(event);
+       |
+0000000|                int delta, anchor=0;
+0000000|                if ((state & sfSelected)!=0) {
+0000000|                        switch (event.what) {
+0000000|                                case evMouseDown:
+0000000|                                        if (event.mouse.buttons==mbMiddleButton && TVOSClipboard.isAvailable() > 1) {
+0000000|                                                pasteFromOSClipboard();
+0000000|                                        } else if (canScroll(delta = mouseDelta(event))) {
+       |                                do {
+0000000|                                        if (canScroll(delta)) {
+0000000|                                        firstPos = firstPos + delta;
+0000000|                                        drawView();
+       |                                }
+0000000|                                } while (mouseEvent(event,evMouseAuto));
+0000000|                                        } else if (event.mouse.doubleClick) {
+0000000|                                selectAll(Select.All);
+       |                                        } else {
+0000000|                                                anchor=mousePos(event);
+       |                                                do {
+0000000|                                                        if (event.what==evMouseAuto && canScroll(delta=mouseDelta(event)))
+0000000|                                                                firstPos = firstPos+delta;
+0000000|                                        curPos=mousePos(event);
+0000000|                                        adjustSelectBlock(anchor);
+0000000|                                        drawView();
+0000000|                                } while (mouseEvent(event,evMouseMove | evMouseAuto));
+0000000|                                if (TVOSClipboard.isAvailable()>1) {
+0000000|                                        copyToOSClipboard();
+       |                                }
+       |                                        }
+0000000|                                        clearEvent(event);
+0000000|                                        break;
+0000000|                                case evKeyDown:
+0000000|                                        key = ctrlToArrow(event.keyDown.keyCode);
+0000000|                                        extendBlock = false;
+0000000|                                        if (key & KeyCode.kbShiftCode) {
+0000000|                                           KeyCode keyS = cast(KeyCode)(key & (~KeyCode.kbShiftCode));
+0000000|                                                if (keyS==KeyCode.kbHome || keyS==KeyCode.kbLeft || keyS==KeyCode.kbRight || keyS==KeyCode.kbEnd) {
+0000000|                                                        if (curPos==selEnd)
+0000000|                                        anchor=selStart;
+       |                                        else
+0000000|                                                                anchor=selEnd;
+0000000|                                                        key = keyS;
+0000000|                                                        extendBlock=true;
+       |                                                }
+       |                                        }            
+0000000|                                        switch (key) {
+0000000|                                           case KeyCode.kbLeft:
+0000000|                                                        if (curPos>0)
+0000000|                                                           curPos = curPos - 1;
+0000000|                                                        break;
+0000000|                                           case KeyCode.kbRight:
+0000000|                                                        if (!posIsEnd()) {
+0000000|                                                                curPos = curPos + 1;
+       |                                                        }
+0000000|                                                        break;
+0000000|                                           case KeyCode.kbHome:
+0000000|                                                        curPos=0;
+0000000|                                                        break;
+0000000|                                           case KeyCode.kbEnd:
+0000000|                                                        curPos=dataLen;
+0000000|                                                        break;
+0000000|                                           case KeyCode.kbBackSpace:
+0000000|                                                        if (curPos>0) {
+0000000|                                                           saveState();
+0000000|                                                           selStart=curPos-1;
+0000000|                                                           selEnd  =curPos;
+0000000|                                                           deleteSelect();
+0000000|                                                           if (firstPos>0)
+0000000|                                                                  firstPos = firstPos - 1;
+0000000|                                                           checkValid(Yes.noAutoFill);
+       |                                                        }
+0000000|                                                        break;
+0000000|                                           case KeyCode.kbDelete:
+0000000|                                                        saveState();
+0000000|                                                        if (selStart==selEnd) {
+0000000|                                                                if (!posIsEnd()) {
+0000000|                                                                        selStart=curPos;
+0000000|                                                                        selEnd  =curPos+1;
+       |                                                                 }
+       |                                                        }
+0000000|                                                        deleteSelect();
+0000000|                                                        checkValid(Yes.noAutoFill);
+0000000|                                                        break;
+0000000|                                           case KeyCode.kbInsert:
+0000000|                                                        setState(sfCursorIns,!(state & sfCursorIns));
+0000000|                                                        break;
+0000000|                                           case KeyCode.kbCtrlY:
+0000000|                                                        assignPos(0,EOS);
+0000000|                                                        curPos = 0;
+0000000|                                                        dataLen = 0;
+0000000|                                                        break;
+       |                                           // Let them pass even if these contains a strange ASCII (SET)
+0000000|                                           case KeyCode.kbEnter:
+0000000|                                           case KeyCode.kbTab:
+0000000|                                                        return;
+0000000|                                           default:
+0000000|                                                        if (!insertCharEv(event))
+0000000|                                                           return;
+       |                                          }
+0000000|                                        if (extendBlock) {
+0000000|                                                adjustSelectBlock(anchor);
+       |                                        } else {
+0000000|                                                selStart=0;
+0000000|                                                selEnd=0;
+       |                                        }
+0000000|                                        makeVisible();
+0000000|                                        clearEvent(event);
+0000000|                                        break;
+0000000|                                default:
+0000000|                                        break;
+       |                        }
+       |                }
+       |        }
+       |
+       |        void selectAll( Select select ) {
+0000000|                selStart=0;
+0000000|                if (select == Select.All) {
+0000000|                        curPos = dataLen;
+0000000|                        selEnd = dataLen;
+       |                } else {
+0000000|                        curPos = 0;
+0000000|                        selEnd = 0;
+       |                }
+0000000|                firstPos = max(0, curPos-size.x+2);
+0000000|                if (TVOSClipboard.isAvailable() > 1) {
+0000000|                copyToOSClipboard();
+       |                }
+0000000|                drawView();
+       |        }
+       |
+       |        void setDataFromStr(in char[] str) {
+0000000|                data = str;
+0000000|                dataLen = data.length;
+       |        }
+       |
+       |        void setValidator(Validator aValidator) {
+0000000|                validator = aValidator;
+       |        }
+       |
+       |        override void setState(ushort aState, bool enable) {
+0000000|                bool ownerIsVisible = owner && (owner.state & sfActive);
+0000000|                bool weAreLosingTheFocus = aState==sfFocused && enable==false;
+0000000|                bool wantToBlockIfInvalid = (modeOptions & ilValidatorBlocks);
+0000000|                if (validator && wantToBlockIfInvalid  && ownerIsVisible &&  weAreLosingTheFocus) {
+0000000|                        Validator v = validator;
+0000000|                validator = null;             // Avoid nested tests
+0000000|                bool valid = v(data); // Check if we have valid data
+0000000|                validator = v;
+0000000|                if (!valid)                   // If not refuse the focus change
+0000000|                        return;
+       |           }
+0000000|                TView.setState(aState,enable);
+0000000|                if (aState==sfSelected || (aState==sfActive && (state & sfSelected)))
+0000000|                        selectAll(enable ? Select.All : Select.None);
+       |        }
+       |
+       |        override bool valid(Command cmd) {
+0000000|                if (validator) {
+0000000|                if (cmd == cm.Valid)
+       |                                /*return validator.status == vsOk;*/
+0000000|                                return true;
+0000000|                        else if (cmd != cm.Cancel) {
+0000000|                                if (!validator(data)) {
+0000000|                                        owner.current = null;
+0000000|                                        select();
+0000000|                                        return false;
+       |                    }
+       |                }
+       |           }
+0000000|                return true;
+       |        }
+       |
+       | // Inline helpers to make the code cleaner
+       |        private int insertModeOn() {
+0000000|                return (state & sfCursorIns) == 0;
+       |        }
+       |
+       |        private int lineIsFull() {
+0000000|                return dataLen >= maxLen;
+       |        }
+       |
+       |        private int posIsEnd() {
+0000000|                return curPos >= dataLen;
+       |        }
+       |
+       | // To fine tune the behavior. SET.
+       | private static uint defaultModeOptions;
+       | private uint modeOptions;
+       |
+       |        private int mouseDelta( ref TEvent event ) {
+0000000|                TPoint mouse = makeLocal( event.mouse.where );
+       |         
+0000000|                if (mouse.x <= 0)
+0000000|                        return -1;
+0000000|                else if (mouse.x >= size.x-1)
+0000000|                        return 1;
+       |                else
+0000000|                        return 0;
+       |        }
+       |
+       |        private int mousePos( ref TEvent event ) {
+0000000|                TPoint mouse=makeLocal(event.mouse.where);
+0000000|                mouse.x = max(mouse.x,1);
+0000000|                int pos = mouse.x+firstPos-1;
+0000000|                pos = max(pos,0);
+0000000|                pos = min(pos,dataLen);
+0000000|                return pos;
+       |         }
+       |
+       |}
+..\tinputline.d is 0% covered

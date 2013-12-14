@@ -1,0 +1,28 @@
+       |module tcheckboxes;
+       |
+       |import tvision;
+       |
+       |static string button = " [ ] ";
+       |
+       |class TCheckBoxes : TCluster {
+       |
+0000000|        this( in TRect bounds, TSItem *aStrings) {
+0000000|                super(bounds, aStrings);
+       |        }
+       |
+       |        override void draw() {
+0000000|            drawBox( button, 'X' );
+       |        }
+       |
+       |        override bool mark(int item) {
+0000000|            return (value & (1 <<  item)) != 0;
+       |        }
+       |
+       |        override void press(int item) {
+0000000|            value = value^(1 << item);
+0000000|            TCluster.press(item);
+       |        }
+       |
+       |}
+       |
+..\tcheckboxes.d is 0% covered

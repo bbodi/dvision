@@ -1,0 +1,86 @@
+       |module tcommandset;
+       |
+       |import std.algorithm;
+       |import commands;
+       |
+       |
+       |
+       |struct TCommandSet {
+       |
+       |        private Command[] disabledCommands;
+       |
+       |        void opOpAssign(string op)(Command cmd) {
+       |                static if (op == "+=") {
+       |                        enableCmd( cmd );
+       |                } else if (op == "-=") {
+       |                        disableCmd(cmd);
+       |                }
+       |        }
+       |
+       |        void opOpAssign(string op)(in ref TCommandSet tc) {
+       |                static if (op == "+=") {
+       |                        enableCmd( tc );
+0000000|                } else if (op == "-=") {
+0000000|                        disableCmd(tc);
+       |                } 
+       |        }
+       |
+       |        TCommandSet opBinary(string op)(in ref TCommandSet other) if (op == "&" || op == "|") {
+0000000|                TCommandSet result = TCommandSet(this);
+0000000|                mixin("result " ~ op ~ "= other;");
+0000000|                return result;
+       |        }
+       |
+       |        void enableAllCommands() {
+0000000|                disabledCommands.length = 0;
+       |        }
+       |
+0000000|        this(in ref TCommandSet other) {
+0000000|                this.disabledCommands = other.disabledCommands.dup;             
+       |        }
+       |
+       |        void opAssign(in TCommandSet other) {
+0000000|                this.disabledCommands = other.disabledCommands.dup;
+       |        }
+       |
+       |        bool has( Command cmd ) const {
+      1|            return disabledCommands.canFind(cmd) == false ;
+       |        }
+       |
+       |        void disableCmd( Command cmd )  {
+0000000|                if (has(cmd) == false ) {
+0000000|                        return;
+       |                }
+0000000|                disabledCommands ~= cmd;
+       |        }
+       |
+       |        void enableCmd( in ref TCommandSet other ) {
+0000000|                foreach(disabledCmd; this.disabledCommands) {
+0000000|                        if (other.has(disabledCmd)) {
+0000000|                                enableCmd(disabledCmd);
+       |                        }
+       |                }
+       |        }
+       |
+       |        void disableCmd( in ref TCommandSet other ) {
+0000000|                foreach(disabledCmd; other.disabledCommands) {
+0000000|                        if (this.has(disabledCmd)) {
+0000000|                                disableCmd(disabledCmd);
+       |                        }
+       |                }
+       |        }
+       |
+       |        void enableCmd( Command cmd ) {
+0000000|                int index = disabledCommands.countUntil(cmd);
+0000000|                if (index != -1) {
+0000000|                        disabledCommands = disabledCommands[0..index] ~ disabledCommands[index+1..$];
+       |                }
+       |        }
+       |
+       |
+       |        bool opEquals(in ref TCommandSet other) const {
+0000000|                return this.disabledCommands == other.disabledCommands;
+       |        }
+       |
+       |}
+..\d\tcommand.d is 4% covered

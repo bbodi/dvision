@@ -1,0 +1,403 @@
+       |module tlistviewer;
+       |
+       |import tvision;
+       |
+       |private wchar columnSeparator = 0x179;
+       |private immutable ubyte[] cpListViewer = [0x1A, 0x1A, 0x1B, 0x1C, 0x1D];
+       |private immutable TPalette palette = immutable(TPalette)( cpListViewer);
+       |
+       |class TListViewer : TView {
+       |
+       |        static uint extraOptions = ofBeVerbose;
+       |
+       |        bool center;
+       |        TScrollBar hScrollBar;
+       |    TScrollBar vScrollBar;
+       |    int numCols;
+       |    ccIndex topItem;
+       |    ccIndex focused;
+       |    ccIndex range;
+       |    bool handleSpace;
+       |
+0000000|    uint getExtraOptions() { return extraOptions; }
+0000000|    void setExtraOptions(uint ops) { extraOptions=ops; }
+       |
+0000000|    this(in TRect bounds, int aNumCols, TScrollBar aHScrollBar, TScrollBar aVScrollBar) {
+0000000|        super(bounds);
+0000000|        handleSpace = true;
+0000000|        options |= ofFirstClick | ofSelectable | extraOptions;
+0000000|            eventMask |= evBroadcast;
+       |
+0000000|            hScrollBar = aHScrollBar;
+0000000|            vScrollBar = aVScrollBar;
+0000000|            center = false;
+0000000|            setNumCols(aNumCols);
+       |    }
+       |
+       |    protected final void setNumCols(int aNumCols) {
+0000000|                int arStep,pgStep;
+       |
+0000000|                numCols=aNumCols;
+       |                // Compute the scroll bar changes.
+0000000|                if (vScrollBar !is null) {
+0000000|                if (numCols == 1) {
+0000000|                        pgStep = size.y-1;
+0000000|                        arStep = 1;
+       |                        } else {
+0000000|                                pgStep = size.y*numCols;
+0000000|                                arStep = size.y;
+       |                        }
+0000000|                        vScrollBar.setStep(pgStep,arStep);
+       |                }
+0000000|                if (hScrollBar)
+0000000|                hScrollBar.setStep(size.x/numCols,1);
+       |        }
+       |
+       |        override void changeBounds( in TRect bounds ) {
+0000000|            TView.changeBounds( bounds );
+0000000|            if( hScrollBar !is null )
+0000000|                hScrollBar.setStep( size.x / numCols, 1 );
+       |        }
+       |
+       |        override void draw() {
+0000000|                ushort  focusedColor=0;
+0000000|                TDrawBuffer b;
+0000000|                ubyte scOff;
+       |
+0000000|                int normalColor, selectedColor;
+0000000|                if( (state&(sfSelected | sfActive)) == (sfSelected | sfActive)) {
+0000000|                normalColor = getColor(1);
+0000000|                focusedColor = getColor(3);
+0000000|                selectedColor = getColor(4);
+       |                } else {
+0000000|                        normalColor = getColor(2);
+0000000|                selectedColor = getColor(4);
+       |                }
+       |
+0000000|                int indent = hScrollBar !is null ? hScrollBar.value : 0;
+       |
+0000000|                int color;
+0000000|            int colWidth = size.x / numCols + 1;
+0000000|            for( int i = 0; i < size.y; i++ ) {
+0000000|                for( int j = 0; j < numCols; j++ ) {
+0000000|                    int width;
+0000000|                    ccIndex item =  j * size.y + i + topItem;
+0000000|                    int curCol = j * colWidth;
+0000000|                    if (j == numCols-1) 
+0000000|                        width = size.x - curCol + 1; 
+       |                    else 
+0000000|                        width = colWidth;
+0000000|                    if( (state & (sfSelected | sfActive)) == (sfSelected | sfActive) &&
+0000000|                        focused == item &&
+0000000|                        range > 0) {
+0000000|                        color = focusedColor;
+0000000|                        setCursor( curCol + 1, i );
+0000000|                        scOff = 0;
+0000000|                                } else if( item < range && isSelected(item) ) {
+0000000|                        color = selectedColor;
+0000000|                        scOff = 2;
+       |                                } else {
+0000000|                        color = normalColor;
+0000000|                        scOff = 4;
+       |                                }
+       |
+0000000|                    b.moveChar( curCol, ' ', color, width );
+0000000|                    drawLine(color, item, b, curCol, width, indent, scOff);
+       |
+       |                    // It was a really nasty thing, this call used 179 instead of
+       |                    // a configurable value like now.
+0000000|                   b.moveChar( curCol+width-1, columnSeparator, getColor(5), 1 );
+       |                        }
+0000000|                writeLine( 0, i, size.x, 1, b );
+       |                }
+       |        }
+       |
+       |        void drawLine(int color, int item, ref TDrawBuffer b, int curCol, int width, int indent, int scOff) {
+0000000|                if( item < range && item != -1 ) {
+0000000|                        string text = getText( item );
+0000000|                        int to = indent + min(width, text.length);
+0000000|                        string buf = text.length <= indent ? "" : text[indent..to];
+0000000|                        b.moveStr( curCol+1, buf, color );
+0000000|                        if( showMarkers ) {
+0000000|                                b.putChar( curCol, specialChars[scOff] );
+0000000|                                b.putChar( curCol+width-2, specialChars[scOff+1] );
+       |                        }
+       |                } else {
+0000000|                        b.moveStr( curCol+1, _("<empty>"), getColor(1) );
+       |                }
+       |        }
+       |
+       |        void focusItem( ccIndex item ) {
+0000000|            focused = item;
+       |
+0000000|            if( item < topItem ) {
+0000000|                if( numCols == 1 )
+0000000|                    topItem = item;
+       |                else
+0000000|                    topItem = item - item % size.y;
+       |            } else {
+0000000|                if( item >= topItem + size.y*numCols ) {
+0000000|                    if( numCols == 1 )
+0000000|                        topItem = item - size.y + 1;
+       |                    else
+0000000|                        topItem = item - item % size.y - (size.y * (numCols-1));
+       |                }
+       |            }
+0000000|            if( vScrollBar !is null )
+0000000|                vScrollBar.setValue( item );
+       |            else
+0000000|                drawView();
+0000000|            if (owner && (options & ofBeVerbose))
+0000000|               message(owner,evBroadcast,cm.ListItemFocused,this);
+       |        }
+       |
+       |
+       |        /**[txh]********************************************************************
+       |
+       |          Description:
+       |          That's a variant of focusItem that tries to center the focused item when
+       |        the list have only one column.
+       |          
+       |        ***************************************************************************/
+       |
+       |        void focusItemCentered( ccIndex item ) {
+0000000|            if( numCols != 1 ) {
+0000000|                focusItem( item );
+0000000|                return;
+       |                }
+0000000|            center = true;
+0000000|            focused = item;
+       |
+0000000|            if( item < topItem ) {
+0000000|                topItem = item - size.y/2;
+0000000|                if( topItem < 0)
+0000000|                    topItem = 0;
+       |                } else {
+0000000|                if( item >= topItem + size.y*numCols ) {
+0000000|                    topItem = item - size.y/2;
+0000000|                    if( topItem + size.y >= range && range > size.y)
+0000000|                        topItem = range - size.y;
+       |                        }
+       |                }
+0000000|            if( vScrollBar !is null )
+0000000|                vScrollBar.setValue( item );
+       |            else
+0000000|                drawView();
+0000000|            if (owner && (options & ofBeVerbose))
+0000000|               message(owner,evBroadcast,cm.ListItemFocused,this);
+0000000|            center = false;
+       |        }
+       |
+       |        void focusItemNum( ccIndex item ) {
+0000000|            if( item < 0 )
+0000000|                item = 0;
+0000000|            else if( item >= range && range > 0 )
+0000000|                        item = range - 1;
+       |
+0000000|            if( range !=  0 ) {
+0000000|                if( center )
+0000000|                    focusItemCentered( item );
+       |                else
+0000000|                    focusItem( item );
+       |                }
+       |        }
+       |
+       |        override ref immutable(TPalette) getPalette() const {
+0000000|            return palette;
+       |        }
+       |
+       |        string getText( ccIndex ) const {
+0000000|            return "";
+       |        }
+       |
+       |        bool isSelected( ccIndex item ) const {
+0000000|            return item == focused;
+       |        }
+       |
+       |        override void handleEvent( ref TEvent event ) {
+0000000|            int mouseAutosToSkip = 4;
+       |
+0000000|            TView.handleEvent(event);
+       |
+0000000|            if( event.what == evMouseDown ) {
+       |                // They must be before doubleClick to avoid "b4 double click"
+0000000|                if( event.mouse.buttons == mbButton4 ) {
+0000000|                    focusItemNum(focused - size.y * numCols);
+0000000|                    clearEvent( event );
+0000000|                    return;
+       |                        }
+0000000|                if( event.mouse.buttons == mbButton5 ) {
+0000000|                                focusItemNum(focused + size.y * numCols);
+0000000|                    clearEvent( event );
+0000000|                    return;
+       |                        }
+0000000|                if( event.mouse.doubleClick && range > focused ) {
+0000000|                    selectItem( focused );
+0000000|                    clearEvent( event );
+0000000|                    return;
+       |                        }
+0000000|                int colWidth = size.x / numCols + 1;
+0000000|                ccIndex oldItem =  focused;
+0000000|                TPoint mouse = makeLocal( event.mouse.where );
+0000000|                ccIndex newItem = mouse.y + (size.y * (mouse.x / colWidth)) + topItem;
+0000000|                int count = 0;
+       |                do  {
+0000000|                    if( newItem != oldItem ) {
+0000000|                        focusItemNum( newItem );
+       |                    }
+0000000|                    oldItem = newItem;
+0000000|                    mouse = makeLocal( event.mouse.where );
+0000000|                    if( mouseInView( event.mouse.where ) ) {
+0000000|                        newItem = mouse.y + (size.y * (mouse.x / colWidth)) + topItem;
+       |                    } else {
+0000000|                        if( numCols == 1 ) {
+0000000|                            if( event.what == evMouseAuto )
+0000000|                                count++;
+0000000|                            if( count == mouseAutosToSkip ) {
+0000000|                                count = 0;
+0000000|                                if( mouse.y < 0 )
+0000000|                                    newItem = focused - 1;
+0000000|                                else if( mouse.y >= size.y )
+0000000|                                        newItem = focused + 1;
+       |                                                }
+       |                                        } else {
+0000000|                            if( event.what == evMouseAuto )
+0000000|                                count++;
+0000000|                            if( count == mouseAutosToSkip ) {
+0000000|                                count = 0;
+0000000|                                if( mouse.x < 0 )
+0000000|                                    newItem = focused - size.y;
+0000000|                                else if( mouse.x >= size.x )
+0000000|                                    newItem = focused + size.y;
+0000000|                                else if( mouse.y < 0 )
+0000000|                                    newItem = focused - focused % size.y;
+0000000|                                else if( mouse.y > size.y )
+0000000|                                    newItem = focused - focused % size.y + size.y - 1;
+       |                                                }
+       |                                        }
+       |                                }
+0000000|                        } while( mouseEvent( event, evMouseMove | evMouseAuto ) );
+0000000|                focusItemNum( newItem );
+0000000|                if( event.mouse.doubleClick && range > focused )
+0000000|                    selectItem( focused );
+0000000|                clearEvent( event );
+0000000|                } else if( event.what == evKeyDown ) {
+0000000|                        ccIndex newItem;
+0000000|                if ((handleSpace == true) &&
+0000000|                    (event.keyDown.charScan.charCode ==  ' ') && focused < range ) {
+0000000|                    selectItem( focused );
+0000000|                    newItem = focused;
+       |                        } else {
+0000000|                    switch (ctrlToArrow(event.keyDown.keyCode)) {
+0000000|                        case KeyCode.kbUp:
+0000000|                            newItem = focused - 1;
+0000000|                            break;
+0000000|                        case KeyCode.kbDown:
+0000000|                            newItem = focused + 1;
+0000000|                            break;
+0000000|                        case KeyCode.kbRight:
+0000000|                            if( numCols > 1 )
+0000000|                                newItem = focused + size.y;
+       |                            else { // SET: if the user put a scroll bar with one column
+       |                                  // that's what he wants
+0000000|                                if (hScrollBar) 
+0000000|                                                                hScrollBar.handleEvent(event);
+0000000|                                return;
+       |                                                }
+0000000|                            break;
+0000000|                        case KeyCode.kbLeft:
+0000000|                            if( numCols > 1 )
+0000000|                                newItem = focused - size.y;
+       |                            else { // SET: see KeyCode.kbRight
+0000000|                                if (hScrollBar) 
+0000000|                                                                hScrollBar.handleEvent(event);
+0000000|                                return;
+       |                            }
+0000000|                            break;
+0000000|                        case KeyCode.kbPgDn:
+0000000|                            newItem = focused + size.y * numCols;
+0000000|                            break;
+0000000|                        case  KeyCode.kbPgUp:
+0000000|                            newItem = focused - size.y * numCols;
+0000000|                            break;
+0000000|                        case KeyCode.kbHome:
+0000000|                            newItem = topItem;
+0000000|                            break;
+0000000|                        case KeyCode.kbEnd:
+0000000|                            newItem = topItem + (size.y * numCols) - 1;
+0000000|                            break;
+0000000|                        case KeyCode.kbCtrlPgDn:
+0000000|                            newItem = range - 1;
+0000000|                            break;
+0000000|                        case KeyCode.kbCtrlPgUp:
+0000000|                            newItem = 0;
+0000000|                            break;
+0000000|                        default:
+0000000|                            return;
+       |                    }
+0000000|                    focusItemNum(newItem);
+       |                }
+0000000|                clearEvent(event);
+0000000|            } else if( event.what == evBroadcast ) {
+0000000|                if( (options & ofSelectable) != 0 ) {
+0000000|                    if( event.message.command == cm.ScrollBarClicked &&
+0000000|                          ( cast(TView)event.message.infoPtr is hScrollBar || 
+0000000|                            cast(TView)event.message.infoPtr is vScrollBar ) ) {
+0000000|                        select();
+0000000|                    } else if( event.message.command == cm.ScrollBarChanged ) {
+0000000|                        if( vScrollBar is cast(TView)event.message.infoPtr ) {
+0000000|                            focusItemNum( vScrollBar.value );
+0000000|                            drawView();
+0000000|                                        } else if( hScrollBar is cast(TView)event.message.infoPtr )
+0000000|                            drawView();
+       |                                }
+       |                        }
+       |                }
+       |        }
+       |
+       |        void selectItem( ccIndex ) {
+0000000|            message( owner, evBroadcast, cm.ListItemSelected, this );
+       |        }
+       |
+       |        void setRange( ccIndex aRange ) {
+0000000|            range = aRange;
+0000000|            if (focused >= aRange)
+0000000|               focused = (aRange - 1 >= 0) ? aRange - 1 : 0;
+0000000|            if( vScrollBar !is null ) {
+0000000|                vScrollBar.setParams( focused,
+       |                                       0,
+       |                                       aRange - 1,
+       |                                       vScrollBar.pgStep,
+       |                                       vScrollBar.arStep
+       |                                     );
+       |                } 
+       |            else
+0000000|                drawView();
+       |        }
+       |
+       |        override void setState( ushort aState, bool enable) {
+0000000|            TView.setState( aState, enable );
+0000000|            if( (aState & (sfSelected | sfActive)) != 0 ) {
+0000000|                if( hScrollBar !is null ) {
+0000000|                    if( getState(sfActive) )
+0000000|                        hScrollBar.show();
+       |                    else
+0000000|                        hScrollBar.hide();
+       |                        }
+0000000|                if( vScrollBar !is null ) {
+0000000|                    if( getState(sfActive) )
+0000000|                        vScrollBar.show();
+       |                    else
+0000000|                        vScrollBar.hide();
+       |                        }
+0000000|                drawView();
+       |                }
+       |        }
+       |
+       |        override void shutDown() {
+0000000|             hScrollBar = null;
+0000000|             vScrollBar = null;
+0000000|             TView.shutDown();
+       |        }
+       |}
+..\d\tlistviewer.d is 0% covered

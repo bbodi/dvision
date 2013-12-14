@@ -1,0 +1,19 @@
+       |module grid;
+       |
+       |import tvision;
+       |
+       |class Grid : TGroup {
+       |
+       |        private TView[][] cells;
+       |
+0000000|        this(in TRect bounds, TView[][] cells) {
+0000000|                super(bounds);
+0000000|                this.cells = cells;
+       |        }
+       |
+       |        override void draw() {
+       |
+       |        }
+       |
+       |}
+..\d\grid.d is 0% covered

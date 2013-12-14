@@ -1,0 +1,189 @@
+       |module twindow;
+       |
+       |import tview;
+       |import tframe;
+       |import tscrollbar;
+       |
+       |private const TPoint minWinSize = {16, 6};
+       |
+       |
+       |private const ubyte[] cpBlueWindow  = cast(ubyte[])"\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F";
+       |private const ubyte[] cpCyanWindow  = cast(ubyte[])"\x10\x11\x12\x13\x14\x15\x16\x17";
+       |private const ubyte[] cpGrayWindow  = cast(ubyte[])"\x18\x19\x1A\x1B\x1C\x1D\x1E\x1F";
+       |
+       |private immutable TPalette blue = immutable(TPalette)( cpBlueWindow);
+       |private immutable TPalette cyan = immutable(TPalette)( cpCyanWindow);
+       |private immutable TPalette gray = immutable(TPalette)( cpGrayWindow);
+       |private immutable(TPalette)*[] palettes;
+       |static this() {
+      1|        palettes = [&blue, &cyan, &gray];
+       |}
+       |
+       |class TWindow : TGroup {
+       |
+       |        string title;
+       |        int number;
+       |        ubyte flags;
+       |    TRect zoomRect;
+       |    short palette;
+       |    TFrame frame;
+       |
+       |        string getTitle( int ) {
+0000000|        return title;
+       |        }
+       |
+0000000|        this(in TRect bounds, string aTitle, short aNumber) {
+0000000|                super(bounds);
+0000000|                flags =  wfMove | wfGrow | wfClose | wfZoom;
+0000000|                zoomRect = getBounds();
+0000000|                palette = wpBlueWindow;
+0000000|                number = aNumber;
+0000000|                title = aTitle;
+0000000|            state |= sfShadow;
+0000000|            options |= ofSelectable | ofTopSelect;
+0000000|            growMode = gfGrowAll | gfGrowRel;
+0000000|            eventMask |= evMouseUp; //for TFrame
+0000000|            frame = createFrame(getExtent());
+0000000|            if( frame !is null ) {
+0000000|                        insert( frame );
+       |            }
+       |        }
+       |
+       |        TFrame createFrame( in TRect r ) {
+0000000|            return new TFrame(r);
+       |        }
+       |
+       |        void close() {
+0000000|            if( valid( cm.Close ) ) { // SET: tell the application we are closing
+0000000|                        message( null/*TProgram.application*/, evBroadcast, cm.ClosingWindow, this );
+0000000|                        frame = null;  // so we don't try to use the frame after it's been deleted
+0000000|                        CLY_destroy( this );
+       |                }
+       |        }
+       |
+       |        override void shutDown() {
+0000000|            frame = null;
+0000000|            TGroup.shutDown();
+       |        }
+       |
+       |        override ref immutable(TPalette) getPalette() const {
+0000000|            return *(palettes[palette]);
+       |        }
+       |
+       |        override void handleEvent( ref TEvent event ) {
+0000000|                TRect  limits;
+0000000|                TPoint min, max;
+       |
+0000000|            TGroup.handleEvent(event);
+0000000|            if( event.what== evCommand ) {
+0000000|                        bool sendToThisWindow =  cast(TWindow)event.message.infoPtr is this;
+0000000|                        Command cmd = event.message.command;
+0000000|                        if (cmd == cm.Resize) {
+0000000|                                if( (flags & (wfMove | wfGrow)) != 0 ) {
+0000000|                                        limits = owner.getExtent();
+0000000|                                        sizeLimits(min, max);
+0000000|                                        dragView( event, dragMode | (flags & (wfMove | wfGrow)),
+       |                                                         limits, min, max);
+0000000|                                        clearEvent(event);
+       |                                }
+0000000|                        } else if (cmd == cm.Close) {
+0000000|                                if( (flags & wfClose) != 0 && ( event.message.infoPtr == null || sendToThisWindow)) {
+0000000|                                        if( (state & sfModal) == 0 ) {
+0000000|                                                close();
+       |                                        } else {
+0000000|                                                event.what = evCommand;
+0000000|                                                event.message.command = cm.Cancel;
+0000000|                                                putEvent( event );
+       |                                        }
+0000000|                                        clearEvent( event );
+       |                                }
+0000000|                        } else if (cmd == cm.Zoom) {
+0000000|                                if( (flags & wfZoom) != 0 && (event.message.infoPtr == null || sendToThisWindow) ) {
+0000000|                                        zoom();
+0000000|                                        clearEvent(event);
+       |                                }
+       |                        }
+0000000|            } else if( event.what == evKeyDown ) {
+0000000|                    switch (event.keyDown.keyCode) {
+0000000|                        case  KeyCode.kbTab:
+0000000|                        case  KeyCode.kbDown:
+0000000|                        case  KeyCode.kbRight:
+0000000|                            selectNext(false);
+0000000|                            clearEvent(event);
+0000000|                            break;
+0000000|                        case  KeyCode.kbShTab:
+0000000|                        case  KeyCode.kbUp:
+0000000|                        case  KeyCode.kbLeft:
+0000000|                            selectNext(true);
+0000000|                            clearEvent(event);
+0000000|                            break;
+0000000|                                        default:
+0000000|                            break;
+       |                        } 
+0000000|                } else if( event.what == evBroadcast && 
+0000000|                     event.message.command == cm.SelectWindowNum &&
+0000000|                     event.message.infoInt == number && 
+0000000|                     (options & ofSelectable) != 0
+       |                   ) {
+0000000|                    select();
+0000000|                    clearEvent(event);
+       |                           }
+       |        }
+       |
+       |        override void setState( ushort aState, bool enable ) {
+       |                //#define C(x) if (enable == true) enableCommand(x); else disableCommand(x)
+0000000|                template EnableOrDisableCommand(string cmd) {
+       |                        const char[] EnableOrDisableCommand = "if (enable == true) enableCommand("~cmd~"); else disableCommand("~cmd~");";
+       |                }
+0000000|            TGroup.setState(aState, enable);
+0000000|            if( (aState & sfSelected) != 0 ) {
+0000000|                setState(sfActive, enable);
+0000000|                if( frame !is null)
+0000000|                    frame.setState(sfActive,enable);
+0000000|                mixin(EnableOrDisableCommand!("cm.Next"));
+0000000|                mixin(EnableOrDisableCommand!("cm.Prev"));
+0000000|                if( (flags & (wfGrow | wfMove)) != 0 ) {
+0000000|                    mixin(EnableOrDisableCommand!("cm.Resize"));
+       |                }
+0000000|                if( (flags & wfClose) != 0 ) {
+0000000|                    mixin(EnableOrDisableCommand!("cm.Close"));
+       |                }
+0000000|                if( (flags & wfZoom) != 0 ) {
+0000000|                    mixin(EnableOrDisableCommand!("cm.Zoom"));
+       |                }
+       |                }
+       |        }
+       |
+       |        TScrollBar standardScrollBar( ushort aOptions ) {
+0000000|            TRect r = getExtent();
+0000000|            if( (aOptions & sbVertical) != 0 )
+0000000|                r = TRect( r.b.x-1, r.a.y+1, r.b.x, r.b.y-1 );
+       |            else
+0000000|                r = TRect( r.a.x+2, r.b.y-1, r.b.x-2, r.b.y );
+       |
+0000000|            TScrollBar s;
+0000000|            insert( s = new TScrollBar(r) );
+0000000|            if( (aOptions & sbHandleKeyboard) != 0 )
+0000000|                s.options |= ofPostProcess;
+0000000|            return s;
+       |        }
+       |
+       |        override void sizeLimits( out TPoint min, out TPoint max ) const {
+0000000|            TView.sizeLimits(min, max);
+0000000|            min = minWinSize;
+       |        }
+       |
+       |        void zoom() {
+0000000|            TPoint minSize, maxSize;
+0000000|            sizeLimits( minSize, maxSize );
+0000000|            if( size != maxSize ) {
+0000000|                zoomRect = getBounds();
+0000000|                TRect r = TRect( 0, 0, maxSize.x, maxSize.y );
+0000000|                locate(r);
+       |                } else {
+0000000|                locate( zoomRect );
+       |            }
+       |        }
+       |
+       |}
+..\twindow.d is 0% covered

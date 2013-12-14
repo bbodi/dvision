@@ -1,0 +1,245 @@
+       |module tfiledialog;
+       |
+       |import std.path;
+       |import std.file;
+       |
+       |import tvision;
+       |import tfilelist;
+       |import tfileinfopane;
+       |
+       |const ushort
+       |    fdOKButton      = 0x0001,      // Put an OK button in the dialog
+       |    fdOpenButton    = 0x0002,      // Put an Open button in the dialog
+       |    fdReplaceButton = 0x0004,      // Put a Replace button in the dialog
+       |    fdClearButton   = 0x0008,      // Put a Clear button in the dialog
+       |    fdHelpButton    = 0x0010,      // Put a Help button in the dialog
+       |    fdSelectButton  = 0x0020,      // Put a Select button in the dialog
+       |    fdDoneButton    = 0x0040,      // Say Done isntead of "Cancel"
+       |    fdAddButton     = 0x0080,      // Put an Add button in the dialog
+       |    fdNoLoadDir     = 0x0100;      // Do not load the current directory
+       |                                   // contents into the dialog at Init.
+       |                                   // This means you intend to change the
+       |                                   // WildCard by using SetData or store
+       |                                   // the dialog on a stream.
+       |
+       |// File dialog flags
+       |const int
+       |    ffOpen        = 0x0001,
+       |    ffSaveAs      = 0x0002;
+       |
+       |
+       |class TFileDialog : TDialog {
+       |        private TFileInputLine fileName;
+       |    private TFileList fileList;
+       |    string wildCard;
+       |    string directory;
+       |
+0000000|    this( string aWildCard, string aTitle, string inputName, ushort aOptions, HistoryId histId ) {
+0000000|                super(TRect(15, 1, 64, 21), aTitle);
+0000000|            options |= ofCentered;
+       |            // SET: Allow it to grow
+0000000|            growMode = gfGrowAll;
+0000000|            flags   |= wfGrow | wfZoom;
+0000000|            wildCard = aWildCard;
+       |
+0000000|            fileName = new TFileInputLine( TRect( 3, 2, 31, 3 ) );
+0000000|            fileName.setDataFromStr( wildCard );
+0000000|            fileName.growMode=gfGrowHiX;
+0000000|            insert( fileName );
+       |
+0000000|            insert( new TLabel( 2, 1, inputName, fileName ) );
+0000000|            THistory his = new THistory(TRect(31, 2, 34, 3), fileName, histId);
+       |            // SET: This and more settings to make it grow nicely
+0000000|            his.growMode = gfGrowLoX | gfGrowHiX;
+0000000|            insert(his);
+       |            
+0000000|            bool longNames = true; // SET
+0000000|            TScrollBar sb = longNames ?
+0000000|                             new TScrollBar( TRect( 34, 5, 35, 16 ) ) :
+0000000|                             new TScrollBar( TRect( 3, 15, 34, 16 ) );
+0000000|            insert( sb );
+0000000|            insert(fileList = new TFileList(TRect(3,5,34,longNames ? 16 : 15), sb));
+0000000|            fileList.growMode = gfGrowHiX | gfGrowHiY;
+       |
+0000000|            insert( new TLabel( 2, 4, __("~F~iles"), fileList ) );
+       |
+0000000|            ushort opt = bfDefault;
+0000000|            TRect r = TRect( 35, 2, 46, 4 );
+       |            
+0000000|            void AddButton(int flag, string name, Command command) {
+0000000|                if (aOptions & flag) {
+0000000|                        TButton button = new TButton(r, name, command, opt); 
+0000000|                        button.growMode=gfGrowLoX | gfGrowHiX; 
+0000000|                        insert(button); 
+0000000|                        opt = bfNormal; 
+0000000|                        r.a.y += 2;
+0000000|                        r.b.y += 2; 
+       |                }
+       |            }
+       |
+0000000|            AddButton(fdOpenButton, __("~O~pen"), cm.FileOpen);
+0000000|            AddButton(fdOKButton, __("~O~K"), cm.FileOpen);
+0000000|            AddButton(fdAddButton, __("~A~dd"), cm.FileOpen);
+0000000|            AddButton(fdSelectButton, __("~S~elect"), cm.FileSelect);
+0000000|            AddButton(fdReplaceButton, __("~R~eplace"), cm.FileReplace);
+0000000|            AddButton(fdClearButton, __("~C~lear"), cm.FileClear);
+       |
+0000000|            TButton bt = new TButton(r,aOptions & fdDoneButton ? __("Done") : __("Cancel"), cm.Cancel, bfNormal);
+0000000|            bt.growMode=gfGrowLoX | gfGrowHiX;
+0000000|            insert(bt);
+0000000|            r.a.y += 2;
+0000000|            r.b.y += 2;
+       |
+0000000|            if( (aOptions & fdHelpButton) != 0 ) {
+0000000|                TButton button = new TButton(r,__("~H~elp"),cm.Help,bfNormal);
+0000000|                button.growMode=gfGrowLoX | gfGrowHiX;
+0000000|                insert(button);
+0000000|                r.a.y += 2;
+0000000|                r.b.y += 2;
+       |                }
+       |
+0000000|            TFileInfoPane fip = new TFileInfoPane(TRect(1,16,48,19));
+0000000|            fip.growMode = gfGrowHiX | gfGrowHiY | gfGrowLoY;
+0000000|            insert(fip);
+       |
+0000000|            selectNext( false );
+0000000|            if( (aOptions & fdNoLoadDir) == 0 )
+0000000|                readDirectory();
+       |            else
+0000000|                setUpCurDir(); // SET: We must setup the current directory anyways
+       |        }
+       |
+       |        // SET: Avoid a size smaller than the starting one
+       |        override void sizeLimits(out TPoint min, out TPoint max) const {
+0000000|                TDialog.sizeLimits(min, max);
+0000000|                min.x = 64 - 15;
+0000000|                min.y = 21 - 1;
+       |        }
+       |
+       |        override void shutDown() {
+0000000|            fileName = null;
+0000000|            fileList = null;
+0000000|            TDialog.shutDown();
+       |        }
+       |
+       |        override void handleEvent(ref TEvent event) {
+0000000|            TDialog.handleEvent(event);
+0000000|            if( event.what == evCommand ) {
+0000000|                        if (event.message.command.someOfThem(cm.FileOpen, cm.FileReplace, cm.FileClear, cm.FileSelect)) {
+0000000|                                endModal(event.message.command);
+0000000|                                clearEvent(event);
+       |                        }
+0000000|            } else if( event.what == evBroadcast && event.message.command == cm.FileDoubleClicked ) {
+0000000|                event.what = evCommand;
+0000000|                event.message.command = cm.Ok;
+0000000|                putEvent( event );
+0000000|                clearEvent( event );
+       |                }
+       |        }
+       |
+       |        void readDirectory() {
+0000000|            fileList.readDirectory( directory, wildCard );
+0000000|            setUpCurDir();
+       |        }
+       |
+       |        void setUpCurDir() {
+0000000|                directory = getcwd();
+       |        }
+       |
+       |        override void setData( void *rec ) {
+0000000|            TDialog.setData( rec );
+0000000|            string file = *cast(string*)rec;
+0000000|            if( file != "" && canFind(file, "?*") ) {
+0000000|                valid( cm.FileInit );
+0000000|                fileName.select();
+       |                }
+       |        }
+       |
+       |        override void getData( void *rec ) const {
+0000000|                string file = getFileName();
+0000000|                *(cast(string*)rec) = std.path.baseName(file);
+       |        }
+       |
+       |        string getFileName() const {
+0000000|                return fileName.getData();
+       |        }
+       |
+       |        private bool isWild(string str) const {
+0000000|                return canFind(str, "*") || canFind(str, "?");
+       |        }
+       |
+       |        override bool valid(Command command) {
+0000000|            if (!TDialog.valid(command))
+0000000|                return false;
+       |
+0000000|            if ((command == cm.Valid) || (command == cm.Cancel))
+0000000|                return true;
+       |
+0000000|            string fName = getFileName();
+0000000|            if (command != cm.FileClear) {
+0000000|                        if(isWild(fName)) {
+0000000|                                string dir = dirName(fName);
+0000000|                                string name = baseName(fName);
+0000000|                    if (std.path.isValidPath( dir )) {
+0000000|                        directory = dir;
+0000000|                        wildCard = name;
+0000000|                        if (command != cm.FileInit)
+0000000|                            fileList.select();
+0000000|                        fileList.readDirectory(directory, wildCard);
+       |                    } else {
+0000000|                                        messageBox( mfError | mfOKButton, __("Invalid drive or directory") );
+0000000|                                        fileName.select();
+0000000|                                        return false;
+       |                                }
+0000000|                } else if (isDir(fName)) {
+0000000|                    if (std.path.isValidPath( fName )) {
+0000000|                        fName ~= dirSeparator;
+0000000|                        directory = fName;
+0000000|                        if (command != cm.FileInit)
+0000000|                            fileList.select();
+0000000|                        fileList.readDirectory(directory, wildCard);
+       |                    } else {
+0000000|                                        messageBox( mfError | mfOKButton, __("Invalid drive or directory") );
+0000000|                                        fileName.select();
+0000000|                                        return false;
+       |                                }
+0000000|                } else if (isValidPath(fName)) {
+0000000|                    return true;
+       |                } else {
+0000000|                    messageBox( mfError | mfOKButton, __("Invalid file name."));
+0000000|                    return false;
+       |                }
+       |            }
+       |            else {
+0000000|               return true;
+       |                }
+0000000|                return false; 
+       |        }
+       |
+       |}
+       |
+       |class TFileInputLine : TInputLine {
+       |        
+0000000|        this(in TRect bounds ) {
+0000000|                super(bounds, 512);
+0000000|        eventMask = eventMask | evBroadcast;
+       |        }
+       |
+       |        override void handleEvent( ref TEvent event ) {
+0000000|            TInputLine.handleEvent(event);
+0000000|            if( event.what == evBroadcast &&
+0000000|                event.message.command == cm.FileFocused &&
+0000000|                !(state & sfSelected)   ) {
+0000000|                        auto entry = cast(DirEntry *)event.message.infoPtr;
+0000000|                if (entry.isDir ) {
+0000000|                                data = buildNormalizedPath(entry.name, (cast(TFileDialog )owner).wildCard);
+0000000|                                dataLen = data.length;
+       |                } else {
+0000000|                                data = entry.name;
+0000000|                        dataLen = data.length;
+       |                        }
+0000000|                drawView();
+       |                }
+       |        }
+       |}
+..\d\tfiledialog.d is 0% covered

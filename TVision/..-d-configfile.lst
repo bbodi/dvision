@@ -1,0 +1,146 @@
+       |module configfile;
+       |
+       |import std.json;
+       |import std.algorithm;
+       |import std.array : array;
+       |import std.stream : OutputStream, Stream;
+       |
+       |struct Elem {
+       |
+       |        private immutable string __name;
+       |        private Elem* __parent;
+       |        private JSONValue __jsonValue;
+       |        private Elem*[string] __children;
+       |
+       |        static Elem* fromFile(Stream ins) {
+0000000|                return new Elem("asd", null, parseJSON(ins.toString()));
+       |        }
+       |
+     22|        this(string name, Elem* parent = null, JSONValue jsonValue = JSONValue.init) {
+     22|                this.__name = name;
+     22|                this.__parent = parent;
+     22|                this.__jsonValue = jsonValue;
+       |        }
+       |
+       |        @property Elem* opDispatch(string name)() {
+     27|                if (name in __children) {
+      8|                        return __children[name];
+       |                }
+     19|                JSONValue defaultValue;
+     19|                if (name in __jsonValue.object) {
+      6|                        defaultValue = __jsonValue.object[name];
+       |                }
+     19|                Elem* elem = new Elem(name, &this, defaultValue);
+     19|                __children[name] = elem;
+     19|                return elem;
+       |        }
+       |
+       |        private JSONValue toJson(T)(T data) {
+     17|                JSONValue val;
+       |                static if (is(T : long)) {
+     11|                        val.integer = data;
+     11|                        val.type = JSON_TYPE.INTEGER;
+       |                } else static if (is(T : real)) {
+       |                        val.floating = data;
+       |                        val.type = JSON_TYPE.FLOAT;
+       |                } else static if (is(T : string)) {
+      3|                        val.str = data;
+      3|                        val.type = JSON_TYPE.STRING;
+       |                } else static if (is(T : Elem)) {
+      3|                        val = data.__jsonValue;
+       |                } else {
+       |                        static assert(false, "Invalid");
+       |                }
+     17|                return val;
+       |        }
+       |
+       |        void set(T)(T rhs) {
+     10|                __jsonValue.type = JSON_TYPE.OBJECT;
+     10|                JSONValue val = toJson(rhs);
+     10|                if (__parent !is null) {
+     10|                        __parent.__jsonValue.type = JSON_TYPE.OBJECT;
+     10|                        this.__jsonValue = val;
+     10|                        registerThisToAllParents();
+       |                } else {
+0000000|                        this.__jsonValue.object[__name] = val;
+       |                }
+       |        }
+       |
+       |        void add(T)(T data) {
+      7|                auto val = toJson(data);
+      7|                __jsonValue.type = JSON_TYPE.ARRAY;
+      7|                __jsonValue.array ~= val;
+      7|                if (__parent !is null) {
+      7|                        registerThisToAllParents();
+       |                }
+       |        }
+       |
+       |        private void registerThisToAllParents() {
+     17|                Elem* parent = __parent;
+     17|                string name = __name;
+     17|                JSONValue val = __jsonValue;
+     36|                while(parent !is null) {
+     19|                        parent.__jsonValue.object[name] = val;
+     19|                        if (parent.__jsonValue.type == JSON_TYPE.init) {
+      1|                                parent.__jsonValue.type = JSON_TYPE.OBJECT;
+       |                        }
+     19|                        name = parent.__name;
+     19|                        val = parent.__jsonValue;
+     19|                        parent = parent.__parent;
+       |                }
+       |        }
+       |
+       |        Elem*[] array() {
+      4|                return std.array.array(map!(a => new Elem("unknown", &this, a))(__jsonValue.array));
+       |        }
+       |
+       |        @property T value(T)() {
+       |                static if (is(T == long)) {
+0000000|                        return __jsonValue.integer;
+       |                } else static if (is(T == ulong)) {
+0000000|                        return cast(ulong)__jsonValue.integer;
+       |                } else static if (is(T == ushort)) {
+0000000|                        return cast(ushort)__jsonValue.integer;
+       |                } else static if (is(T == bool)) {
+       |                        return cast(bool)__jsonValue.integer;
+       |                } else static if (is(T : int)) {
+      4|                        return cast(int)__jsonValue.integer;
+       |                } else static if (is(T : real)) {
+       |                        return __jsonValue.floating;
+       |                } else static if (is(T : string)) {
+      3|                        return __jsonValue.str;
+       |                } else {
+       |                        static assert(false, "Invalid");
+       |                }
+       |        }
+       |
+       |        string toString() {
+      1|                return toJSON(&__jsonValue);
+       |        }
+       |        
+       |}
+       |
+       |unittest {
+      1|        Elem p;
+      1|        p.nameDefinedByUser.set(12);
+      1|        p.asd.set(113);
+     12|        foreach(i; 0..3) {
+      3|                Elem item;
+      3|                item.a.set(12+i);
+      3|                item.b.set("13");
+      3|                p.items.add(item);
+       |        }
+      1|        p.numbers.add(1);
+      1|        p.numbers.add(2);
+      1|        p.numbers.add(3);
+      1|        p.numbers.add(4);
+      1|        p.a.b.c.set(3);
+      1|        string str = p.toString();
+      1|        p.nameDefinedByUser.set(13);
+      1|        assert(p.nameDefinedByUser.value!int == 13);
+     15|        foreach(i, item; p.items.array()) {
+      3|                assert(item.a.value!int == 12+i);
+      3|                assert(item.b.value!string == "13");
+       |        }
+       |}
+..\d\configfile.d is 92% covered

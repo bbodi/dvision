@@ -1,0 +1,1240 @@
+       |module tview;
+       |
+       |import std.stream;
+       |import std.algorithm;
+       |import std.uni : toUpper;
+       |import std.string;
+       |
+       |public import tpoint;
+       |public import trect;
+       |public import tobject;
+       |public import tstreamable;
+       |public import tcommandset;
+       |public import tevent;
+       |public import tpalette;
+       |public import tdrawbuffer;
+       |public import tgroup;
+       |public import tgkey;
+       |public import tscreen;
+       |public import tdisplay;
+       |public import codepage;
+       |public import teventqueue;
+       |public import ttypes;
+       |public import tvconfig;
+       |public import views;
+       |public import common;
+       |public import commands;
+       |import configfile;
+       |
+       |private immutable TPalette palette = immutable(TPalette)(null);
+       |
+       |abstract class TView : TObject, TStreamable {
+       |        
+       |        enum phaseType { phFocused, phPreProcess, phPostProcess };
+       |        enum selectMode{ normalSelect, enterSelect, leaveSelect };
+       |        
+       |        static bool commandSetChanged;
+       |        static bool showMarkers;
+       |        static ubyte errorAttr;
+       |        // SET: These are shared by various TView members.
+       |        // I moved it to a class because I think is better to enclose them.
+       |        static ubyte[] specialChars = [175, 174, 26, 27, ' ', ' ', 0];
+       |        static ubyte[] ospecialChars = [ 175, 174, 26, 27, ' ', ' ', 0 ];
+       |
+       |        static ubyte noMoireUnFill = ' ';  // Just space
+       |        static ubyte noMoireFill = 0xDB;   // Full block
+       |        static ubyte onoMoireFill = 0xDB;  // Full block
+       |        
+       |        static string name;
+       |        
+       |        TView next;
+       |        TPoint size;
+       |        ushort options;
+       |        ushort eventMask;
+       |        ushort state;
+       |        TPoint origin;
+       |        TPoint cursor;
+       |        ushort growMode;
+       |        ushort dragMode;
+       |        int helpCtx;
+       |        TGroup owner;
+       |
+       |        static TCommandSet curCommandSet = initCommands();
+       |        
+0000000|        this(in TRect bounds) {
+0000000|                this.next = null;
+0000000|                this.options = 0;
+0000000|                this.eventMask = evMouseDown | evKeyDown | evCommand | evMouseWheel;
+0000000|                this.state = sfVisible;
+0000000|                this.growMode = 0;
+0000000|                this.dragMode = dmLimitLoY;
+0000000|                this.helpCtx = hcNoContext;
+0000000|                this.owner = null;
+0000000|                setBounds( bounds);
+0000000|                cursor.x = cursor.y = 0;
+       |        }
+       |
+       |        static private TCommandSet initCommands() {
+0000000|                TCommandSet temp;
+0000000|                temp.enableAllCommands();
+0000000|                temp.disableCmd( cm.Zoom );
+0000000|                temp.disableCmd( cm.Close );
+0000000|                temp.disableCmd( cm.Resize );
+0000000|                temp.disableCmd( cm.Next );
+0000000|                temp.disableCmd( cm.Prev );
+0000000|                return temp;
+       |        }
+       |        
+       |        void sizeLimits( out TPoint min, out TPoint max ) const {
+0000000|                min.x = min.y = 0;
+0000000|                if (owner !is null)
+0000000|                        max = owner.size;
+       |                else
+0000000|                        max.x = max.y = int.max;
+       |        }
+       |        
+       |        TRect getBounds() const {
+0000000|                return TRect( origin, origin+size );
+       |        }       
+       |        
+       |        TRect getExtent() const {
+0000000|                return TRect( 0, 0, size.x, size.y );
+       |        }
+       |        
+       |        TRect getClipRect() const {
+0000000|                TRect clip = getBounds();
+0000000|                if (owner !is null)
+0000000|                        clip.intersect(owner.clip);
+0000000|                clip.move(-origin.x, -origin.y);
+0000000|                return clip;
+       |        }
+       |        
+       |        bool mouseInView(in TPoint mouse) const {
+0000000|                TPoint localMouse = makeLocal( mouse );
+0000000|                if (localMouse.y == -49) {
+0000000|                        localMouse.y = -49;
+0000000|                        TPoint fakk = makeLocal( mouse );
+       |                }
+0000000|                TRect r = getExtent();
+0000000|                return r.contains(localMouse);
+       |        }
+       |        
+       |        bool containsMouse(in TEvent event) const {
+0000000|                return (state & sfVisible) != 0 && mouseInView( event.mouse.where );
+       |        }
+       |        
+       |        void locate( ref TRect bounds ) {
+0000000|                TPoint min, max;
+0000000|                sizeLimits(min, max);
+0000000|                bounds.b.x = bounds.a.x + range(bounds.b.x - bounds.a.x, min.x, max.x);
+0000000|                bounds.b.y = bounds.a.y + range(bounds.b.y - bounds.a.y, min.y, max.y);
+0000000|                TRect r = getBounds();
+0000000|                if( bounds != r ) {
+0000000|                        changeBounds( bounds );
+0000000|                        if ( owner !is null && (state & sfVisible) !=0  ) {
+0000000|                                if ( (state & sfShadow) != 0 ) {
+0000000|                                        r.Union(bounds);
+0000000|                                        r.b += shadowSize;
+       |                                }
+0000000|                                drawUnderRect( r, null );
+       |                        }
+       |                }
+       |        }
+       |        
+       |        void dragView( ref TEvent event, int aMode, ref TRect limits, TPoint minSize, TPoint maxSize) {
+0000000|                ubyte mode = cast(ubyte)aMode;
+0000000|                TRect saveBounds;
+       |                
+0000000|                TPoint p, s;
+0000000|                setState( sfDragging, true );
+       |                
+0000000|                if( event.what == evMouseDown ) {
+0000000|                        if( (mode & dmDragMove) != 0 ) {
+0000000|                                p = origin - event.mouse.where;
+       |                                do  {
+0000000|                                        event.mouse.where += p;
+0000000|                                        moveGrow( event.mouse.where,
+       |                                                 size,
+       |                                                 limits,
+       |                                                 minSize,
+       |                                                 maxSize,
+       |                                                 mode
+       |                                                 );
+0000000|                                } while( mouseEvent(event,evMouseMove) );
+       |                        } else {
+0000000|                                p = size - event.mouse.where;
+       |                                do  {
+0000000|                                        event.mouse.where += p;
+0000000|                                        moveGrow( origin,
+       |                                                 event.mouse.where,
+       |                                                 limits,
+       |                                                 minSize,
+       |                                                 maxSize,
+       |                                                 mode
+       |                                                 );
+0000000|                                } while( mouseEvent(event,evMouseMove) );
+       |                        }
+       |                } else {
+0000000|                        static TPoint 
+       |                        goLeft      =   {-1, 0}, 
+       |                        goRight     =   { 1, 0}, 
+       |                        goUp        =   { 0,-1}, 
+       |                        goDown      =   { 0, 1}, 
+       |                        goCtrlLeft  =   {-8, 0}, 
+       |                        goCtrlRight =   { 8, 0};
+       |                        
+0000000|                        saveBounds = getBounds();
+       |                        do  {
+0000000|                                p = origin;
+0000000|                                s = size;
+0000000|                                keyEvent(event);
+0000000|                                switch (event.keyDown.keyCode) {
+0000000|                                        case KeyCode.kbLeft:
+0000000|                                                change(mode,goLeft,p,s);
+0000000|                                                break;
+0000000|                                        case KeyCode.kbRight:
+0000000|                                                change(mode,goRight,p,s);
+0000000|                                                break;
+0000000|                                        case KeyCode.kbUp:
+0000000|                                                change(mode,goUp,p,s);
+0000000|                                                break;
+0000000|                                        case KeyCode.kbDown:
+0000000|                                                change(mode,goDown,p,s);
+0000000|                                                break;
+0000000|                                        case KeyCode.kbCtrlLeft:
+0000000|                                                change(mode, goCtrlLeft, p, s);
+0000000|                                                break;
+0000000|                                        case KeyCode.kbCtrlRight:
+0000000|                                                change(mode,goCtrlRight,p,s);
+0000000|                                                break;
+       |                                                // Shift info goes in the key
+0000000|                                        case KeyCode.kbShLeft:
+0000000|                                                change(mode,goLeft,p,s,1);
+0000000|                                                break;
+0000000|                                        case KeyCode.kbShRight:
+0000000|                                                change(mode,goRight,p,s,1);
+0000000|                                                break;
+0000000|                                        case KeyCode.kbShUp:
+0000000|                                                change(mode,goUp,p,s,1);
+0000000|                                                break;
+0000000|                                        case KeyCode.kbShDown:
+0000000|                                                change(mode,goDown,p,s,1);
+0000000|                                                break;
+0000000|                                        case KeyCode.kbShCtLeft:
+0000000|                                                change(mode,goCtrlLeft,p,s,1);
+0000000|                                                break;
+0000000|                                        case KeyCode.kbShCtRight:
+0000000|                                                change(mode,goCtrlRight,p,s,1);
+0000000|                                                break;
+0000000|                                        case KeyCode.kbHome:
+0000000|                                                p.x = limits.a.x;
+0000000|                                                break;
+0000000|                                        case KeyCode.kbEnd:
+0000000|                                                p.x = limits.b.x - s.x;
+0000000|                                                break;
+0000000|                                        case KeyCode.kbPgUp:
+0000000|                                                p.y = limits.a.y;
+0000000|                                                break;
+0000000|                                        case KeyCode.kbPgDn:
+0000000|                                                p.y = limits.b.y - s.y;
+0000000|                                                break;
+0000000|                                        default:
+0000000|                                                break;
+       |                                }
+0000000|                                moveGrow( p, s, limits, minSize, maxSize, mode );
+0000000|                        } while( event.keyDown.keyCode != KeyCode.kbEsc && event.keyDown.keyCode != KeyCode.kbEnter);
+0000000|                        if ( event.keyDown.keyCode == KeyCode.kbEsc ) {
+0000000|                                locate(saveBounds);
+       |                        }
+       |                }
+0000000|                setState(sfDragging, false);
+       |        }
+       |        
+       |        int range( int val, int min, int max ) {
+0000000|                if( val < min )
+0000000|                        return min;
+0000000|                else if( val > max )
+0000000|                        return max;
+       |                else
+0000000|                        return val;
+       |        }
+       |        
+       |        void calcBounds( out TRect bounds, in TPoint delta ) {
+0000000|                bounds = getBounds();
+       |                
+0000000|                int s = owner.size.x;
+0000000|                int d = delta.x;
+       |                
+0000000|                void grow(ref int i) {
+0000000|                        if (growMode & gfGrowRel) {
+0000000|                                i = (i * s + ((s - d) >> 1)) / (s - d);
+       |                        } else {
+0000000|                                i += d;
+       |                        }
+       |                }
+       |                
+0000000|                if( (growMode & gfGrowLoX) != 0 )
+0000000|                        grow(bounds.a.x);
+       |                
+0000000|                if( (growMode & gfGrowHiX) != 0 )
+0000000|                        grow(bounds.b.x);
+       |                
+0000000|                s = owner.size.y;
+0000000|                d = delta.y;
+       |                
+0000000|                if( (growMode & gfGrowLoY) != 0 )
+0000000|                        grow(bounds.a.y);
+       |                
+0000000|                if( (growMode & gfGrowHiY) != 0 )
+0000000|                        grow(bounds.b.y);
+       |                
+0000000|                TPoint minLim, maxLim;
+0000000|                sizeLimits( minLim, maxLim );
+0000000|                bounds.b.x = bounds.a.x + range( bounds.b.x-bounds.a.x, minLim.x, maxLim.x );
+0000000|                bounds.b.y = bounds.a.y + range( bounds.b.y-bounds.a.y, minLim.y, maxLim.y );
+       |        }
+       |        
+       |        void changeBounds( in TRect bounds ) {
+0000000|                setBounds(bounds);
+0000000|                drawView();
+       |        }
+       |        
+       |        void growTo( int x, int y ) {
+0000000|                TRect r = TRect(origin.x, origin.y, origin.x + x, origin.y + y);
+0000000|                locate(r);
+       |        }
+       |        
+       |        void moveTo( int x, int y ) {
+0000000|                TRect r = TRect( x, y, x+size.x, y+size.y );
+0000000|                locate(r);
+       |        }
+       |        
+       |        void setBounds( in TRect bounds ) {            
+0000000|                origin = bounds.a;
+0000000|                size = bounds.b - bounds.a;
+       |        }
+       |        
+       |        int getHelpCtx() const {
+0000000|                if( (state & sfDragging) != 0 )
+0000000|                        return hcDragging;
+0000000|                return helpCtx;
+       |        }
+       |        
+       |        bool valid( Command ) {
+0000000|                return true;
+       |        }
+       |        
+       |        void hide() {
+0000000|                if( (state & sfVisible) != 0 )
+0000000|                        setState( sfVisible, false );
+       |        }
+       |        
+       |        void show() {
+0000000|                if( (state & sfVisible) == 0 )
+0000000|                        setState(sfVisible, true);
+       |        }
+       |        
+       |        void draw() {
+0000000|                TDrawBuffer  b;
+0000000|                b.moveChar( 0, ' ', getColor(1), size.x );
+0000000|                writeLine( 0, 0, size.x, size.y, b );
+       |        }
+       |        
+       |        void drawView() {
+0000000|                if (exposed()) {
+0000000|                        draw();
+0000000|                        drawCursor();
+       |                }
+       |        }
+       |        
+       |        bool exposed() {
+0000000|                if (!(state & sfExposed) || size.x<0 || size.y<0) {
+0000000|                        return false;
+       |                }
+       |                
+       |                // Check each line, if at least one is exposed we are exposed
+0000000|                int line=0;
+       |                do {
+0000000|                        if (lineExposed(this, line, 0, size.x))
+0000000|                                return true;
+0000000|                        line++;
+0000000|                } while (line<size.y);
+0000000|                return false;
+       |        }
+       |        
+       |        /**[txh]********************************************************************
+       |         
+       |         Description:
+       |         Finds if the area from x1 to x2 in the indicated line is exposed.
+       |         Note that sometimes the x1 - x2 range can be partially overlapped and we
+       |         must split the search in two. In this case the routine calls itself
+       |         providing a value for the target TView so we know that's just a continuation
+       |         and the initialization is skipped.
+       |         
+       |         Return:
+       |         true if exposed, false if not.
+       |         
+       |         ***************************************************************************/
+       |        
+       |        // TODO a paraméterek lehetnek constok!
+       |        static bool lineExposed(TView view, int line, int x1, int x2, TView target = null) {
+0000000|                int Xtest,Ytest;
+       |                
+0000000|                while (1) {
+0000000|                        if (target is null) {// This is a call to start searching, we must initialize
+0000000|                                target = view;
+       |                                // If no owner we are the view attached to the screen . we are exposed
+0000000|                                if (view.owner is null)
+0000000|                                        return true;
+       |                                // Make coordinates relative to the owner
+0000000|                                line += view.origin.y;
+0000000|                                x1 += view.origin.x;
+0000000|                                x2 += view.origin.x;
+       |                                
+       |                                // Apply clipping, and check if the coordinate gets outside
+0000000|                                const TRect clip = view.owner.clip;
+0000000|                                if (line < clip.a.y || line >= clip.b.y)
+0000000|                                        return false;
+0000000|                                if (x1<clip.a.x)
+0000000|                                        x1=clip.a.x;
+0000000|                                if (x2>clip.b.x)
+0000000|                                        x2=clip.b.x;
+0000000|                                if (x1>=x2)
+0000000|                                        return false;
+       |                                
+       |                                // Go to last in the owner's list
+0000000|                                view = view.owner.last;
+       |                        }
+       |                        
+0000000|                        while (1)
+       |                        {
+0000000|                                view = view.next;
+0000000|                                if (view==target)
+       |                                {// No other TView is overlapping us
+       |                                        // If our owner is buffered report exposed to draw in the buffer
+0000000|                                        if (view.owner.buffer) return true;
+       |                                        // If not work with the owner
+0000000|                                        view = view.owner;
+0000000|                                        target=null;
+0000000|                                        break;
+       |                                }
+       |                                
+       |                                // If not visible forget it
+0000000|                                if (!(view.state & sfVisible)) 
+0000000|                                        continue;
+       |                                
+       |                                // Check the Y range
+0000000|                                Ytest = view.origin.y;
+0000000|                                if (line<Ytest)  continue;
+0000000|                                Ytest += view.size.y;
+0000000|                                if (line>=Ytest) continue;
+       |                                
+       |                                // Check the X range
+0000000|                                Xtest = view.origin.x;
+0000000|                                if (x1>=Xtest)
+       |                                {
+0000000|                                        Xtest+=view.size.x;
+0000000|                                        if (x1>=Xtest) continue;
+       |                                        // This object overlaps, reduce the x range
+0000000|                                        x1=Xtest;
+0000000|                                        if (x1<x2) continue;
+       |                                        // It was reduced to nothing
+0000000|                                        return false;
+       |                                }
+0000000|                                if (x2<=Xtest) continue;
+       |                                // This object overlaps
+0000000|                                Xtest+=view.size.x;
+0000000|                                if (x2<=Xtest)
+       |                                {// Reduce the x range
+0000000|                                        x2=view.origin.x;
+0000000|                                        continue;
+       |                                }
+       |                                // The object partially overlaps generating two segments
+       |                                // So call to analyze x1 to view.origin.x
+0000000|                                if (lineExposed(view,line,x1,view.origin.x,target))
+0000000|                                        return true;
+       |                                // and then continue with view.origin.x+view.size.x to x2
+0000000|                                x1=Xtest;
+       |                        }
+       |                }
+       |        }
+       |        
+       |        void hideCursor() {
+0000000|                setState( sfCursorVis, false );
+       |        }
+       |        
+       |        void drawHide( TView lastView ) {
+0000000|                drawCursor();
+0000000|                drawUnderView((state & sfShadow) != 0, lastView);
+       |        }
+       |        
+       |        void drawShow( TView lastView ) {
+0000000|                drawView();
+0000000|                if( (state & sfShadow) != 0 )
+0000000|                        drawUnderView( true, lastView );
+       |        }
+       |        
+       |        void drawUnderRect( in TRect r, TView lastView ) {
+0000000|                owner.clip.intersect(r);
+0000000|                owner.drawSubViews(nextView(), lastView);
+0000000|                owner.clip = owner.getExtent();
+       |        }
+       |        
+       |        void drawUnderView( bool doShadow, TView lastView ) {
+0000000|                TRect r = getBounds();
+0000000|                if ( doShadow )
+0000000|                        r.b += shadowSize;
+0000000|                drawUnderRect( r, lastView );
+       |        }
+       |        
+       |        uint dataSize() {
+0000000|                return 0;
+       |        }
+       |        
+       |        void getData( void * ) {
+       |        }
+       |        
+       |        void setData( void * ) {
+       |        }
+       |        
+       |        void blockCursor() {
+0000000|                setState(sfCursorIns, true);
+       |        }
+       |        
+       |        void normalCursor() {
+0000000|                setState(sfCursorIns, false);
+       |        }
+       |        
+       |        /**[txh]********************************************************************
+       |         
+       |         Description: 
+       |         This routine enables/disables the screen cursor.
+       |         Two details are important:
+       |         1) If our object is really visible (not under another)
+       |         2) If our state indicates the cursor is visible or not.
+       |         The routine does a search climbing to the owners until the TView that
+       |         have the screen (owner==0) is reached or we determine we are under
+       |         another view and hence the cursor isn't visible.
+       |         SET: I recoded it for clarity.
+       |         
+       |         ***************************************************************************/
+       |        void resetCursor() {
+0000000|                int x, y, lookNext=1;
+0000000|                TView target = this;
+0000000|                TView view;
+       |                
+       |                // If not visible or not focused or cursor not visible (unless never hide)
+       |                // then skip it
+0000000|                if (((~state) & (sfVisible /*| sfCursorVis*/ | sfFocused))==0 &&
+0000000|                    !(TScreen.getDontMoveHiddenCursor() && ((~state) & sfCursorVis)))
+       |                {
+0000000|                        y = cursor.y;
+0000000|                        x = cursor.x;
+       |                        // While the cursor is inside the target
+0000000|                        while ( lookNext &&
+0000000|                               ((x>=0) && (x<target.size.x)) &&
+0000000|                               ((y>=0) && (y<target.size.y)) )
+       |                        {
+0000000|                                y += target.origin.y;
+0000000|                                x += target.origin.x;
+0000000|                                if (!target.owner)
+       |                                { // Target is the one connected to the screen, set the screen cursor
+0000000|                                        TScreen.setCursorPos(x,y);
+0000000|                                        if (state & sfCursorVis)
+       |                                        {
+0000000|                                                ushort curShape = TScreen.cursorLines;
+0000000|                                                if (state & sfCursorIns)
+0000000|                                                        curShape = 100*256;
+0000000|                                                TScreen.setCursorType(curShape);
+       |                                        }
+       |                                        else
+0000000|                                                TScreen.setCursorType(0);
+0000000|                                        return;
+       |                                }
+       |                                // Analyze target.owner unless the coordinate is over another object
+       |                                // that belongs to the owner.
+0000000|                                lookNext = 0;
+0000000|                                view = target.owner.last;
+       |                                do
+       |                                {
+0000000|                                        view = view.next;
+0000000|                                        if (view == target)
+       |                                        { // Ok x,y is inside target and nobody is over it.
+0000000|                                                target = view.owner;
+0000000|                                                lookNext = 1;
+0000000|                                                break;
+       |                                        }
+       |                                }
+0000000|                                while (!(view.state & sfVisible) ||
+0000000|                                       y<view.origin.y ||
+0000000|                                       y>=view.origin.y+view.size.y ||
+0000000|                                       x<view.origin.x ||
+0000000|                                       x>=view.origin.x+view.size.x);
+       |                        }
+       |                }
+       |                // Cursor disabled
+0000000|                TScreen.setCursorType(0);
+0000000|                return;
+       |        }
+       |        
+       |        void setCursor( int x, int y ) {
+0000000|                cursor.x = x;
+0000000|                cursor.y = y;
+0000000|                drawCursor();
+       |        }
+       |        
+       |        void showCursor() {
+0000000|                setState( sfCursorVis, true );
+       |        }
+       |        
+       |        void drawCursor() {
+       |                // SET: do it only if our owner gives permission
+0000000|                if( (state & sfFocused) != 0 && owner && owner.canShowCursor())
+0000000|                        resetCursor();
+       |        }
+       |        
+       |        // TODO: Why is this here?...
+       |        void clearEvent( ref TEvent event ) {
+0000000|                event.what = evNothing;
+0000000|                event.message.infoPtr = cast(void*)this;
+       |        }
+       |        
+       |        bool eventAvail() {
+0000000|                TEvent event;
+0000000|                getEvent(event);
+0000000|                if( event.what != evNothing )
+0000000|                        putEvent(event);
+0000000|                return event.what != evNothing;
+       |        }
+       |        
+       |        void getEvent( ref TEvent event ) {
+0000000|                if( owner !is null )
+0000000|                        owner.getEvent(event);
+       |        }
+       |        
+       |        void handleEvent(ref TEvent event) {
+0000000|                if( event.what == evMouseDown )
+       |                {
+0000000|                        if(!(state & (sfSelected | sfDisabled)) && (options & ofSelectable) )
+       |                        {
+0000000|                                select();
+0000000|                                if( !(state & sfSelected) || // SET: If we failed to get the focus forget
+       |                                   // about this mouse click.
+0000000|                                   !(options & ofFirstClick) )
+0000000|                                        clearEvent(event);
+       |                        }
+       |                }
+       |        }
+       |        
+       |        void putEvent( ref TEvent event ) {
+0000000|                if( owner !is null )
+0000000|                        owner.putEvent(event);
+       |        }
+       |        
+       |        void createEvent(T)( ushort what, Command command, T infoPtr ) {
+0000000|                TEvent event;
+0000000|                event.what = what;
+0000000|                event.message.command = command;
+0000000|                event.message.infoPtr = cast(void*)infoPtr;
+0000000|                putEvent( event );
+       |        }
+       |        
+       |        static bool commandEnabled( Command command ) {
+      1|                return /* (command > 0x3FF) || // is now handled by
+       |                        // curCommandSet.has(command) */
+       |                curCommandSet.has(command);
+       |        }
+       |        
+       |        static void disableCommands( TCommandSet commands ) {
+0000000|                commandSetChanged = true;
+0000000|                curCommandSet.disableCmd(commands);
+       |        }
+       |        
+       |        static void disableCommand( Command command ) {
+0000000|                commandSetChanged =  commandSetChanged ||
+0000000|                        curCommandSet.has(command) ;
+0000000|                curCommandSet.disableCmd(command);
+       |        }
+       |        
+       |        static void enableCommands( TCommandSet commands ) {
+0000000|                commandSetChanged =  commandSetChanged || ((curCommandSet&commands) != commands) ;
+0000000|                curCommandSet.enableCmd(commands);
+       |        }
+       |        
+       |        static void enableCommand( Command command ) {
+0000000|                commandSetChanged = commandSetChanged || !curCommandSet.has( command ) ;
+0000000|                curCommandSet.enableCmd(command);
+       |        }
+       |        
+       |        static void getCommands( out TCommandSet commands ) {
+0000000|                commands = curCommandSet;
+       |        }
+       |        
+       |        static void setCommands( TCommandSet commands ) {
+0000000|                commandSetChanged = commandSetChanged || (curCommandSet != commands );
+0000000|                curCommandSet = commands;
+       |        }
+       |        
+       |        void endModal( Command command ) {
+0000000|                if( TopView() !is null )
+0000000|                        TopView().endModal(command);
+       |        }
+       |        
+       |        Command execute() {
+0000000|                return cm.Cancel;
+       |        }
+       |        
+       |        ushort getColor( ushort color ) const {
+0000000|                ushort colorPair = color >> 8;
+       |                
+0000000|                if( colorPair != 0 )
+0000000|                        colorPair = mapColor(colorPair) << 8;
+       |                
+0000000|                colorPair |= mapColor( cast(ubyte)color );
+       |                
+0000000|                return colorPair;
+       |        }
+       |        
+       |        ref immutable(TPalette) getPalette() const {
+0000000|                return palette;
+       |        }
+       |        
+       |        private ubyte getOwnerMapColor(in TView view, ubyte color) const {
+0000000|                if (view is null) {
+0000000|                        return color;
+       |                }
+0000000|                const TPalette p = view.getPalette();
+0000000|                auto paletteLen = p[0];
+0000000|                if( paletteLen != 0 ) {
+0000000|                        if( color > paletteLen )
+0000000|                                return errorAttr;
+0000000|                        color = p[color];
+0000000|                        if( color == 0 )
+0000000|                                return errorAttr;
+       |                }
+0000000|                return getOwnerMapColor(view.owner, color);
+       |        }
+       |        
+       |        ubyte mapColor( int c ) const {
+0000000|                ubyte color = cast(ubyte)(c);
+0000000|                if( color == 0 )
+0000000|                        return errorAttr;
+0000000|                const TView cur = this;
+0000000|                return getOwnerMapColor(this, color);
+       |        }
+       |        
+       |        bool getState( ushort aState ) const {
+0000000|                return  (state & aState) == aState ;
+       |        }
+       |        
+       |        void select() {
+0000000|                if( (options & ofTopSelect) != 0 )
+0000000|                        makeFirst();
+0000000|                else if( owner !is null )
+0000000|                        owner.setCurrent( this, selectMode.normalSelect );
+       |        }
+       |        
+       |        void setState( ushort aState, bool enable ) {
+0000000|                if( enable == true )
+0000000|                        state |= aState;
+       |                else
+0000000|                        state &= ~aState;
+       |                
+0000000|                if( owner is null )
+0000000|                        return;
+       |                
+0000000|                switch( aState )
+       |                {
+0000000|                        case  sfVisible:
+0000000|                                if( (owner.state & sfExposed) != 0 )
+0000000|                                        setState( sfExposed, enable );
+0000000|                                if( enable == true )
+0000000|                                        drawShow( null );
+       |                                else
+0000000|                                        drawHide( null );
+0000000|                                if( (options & ofSelectable) != 0 )
+0000000|                                        owner.resetCurrent();
+0000000|                                break;
+0000000|                        case  sfCursorVis:
+0000000|                        case sfCursorIns:
+0000000|                                drawCursor();
+0000000|                                break;
+0000000|                        case  sfShadow:
+0000000|                                drawUnderView( true, null );
+0000000|                                break;
+0000000|                        case  sfFocused:
+0000000|                                if (owner && owner.canShowCursor())
+       |                                        // SET: do it only if our owner gives permission
+0000000|                                        resetCursor();
+0000000|                                message( owner,
+       |                                        evBroadcast,
+0000000|                                        (enable == true) ? cm.ReceivedFocus : cm.ReleasedFocus,
+       |                                        this
+       |                                        );
+0000000|                                break;
+0000000|                        default:
+0000000|                                break;
+       |                }
+       |        }
+       |        
+       |        void keyEvent( ref TEvent event ) {
+       |                do {
+0000000|                        getEvent(event);
+0000000|                } while( event.what != evKeyDown );
+       |        }
+       |        
+       |        bool mouseEvent(ref TEvent event, ushort mask) {
+       |                do {
+0000000|                        getEvent(event);
+0000000|                } while( !(event.what & (mask | evMouseUp)) );
+       |                
+0000000|                return event.what != evMouseUp;
+       |        }
+       |        
+       |        TPoint makeGlobal( TPoint source ) const {
+0000000|                TPoint rMakeGlobal(in TView view) {
+0000000|                        if (view is null) {
+0000000|                                return source;
+       |                        }
+0000000|                        source += view.origin;
+0000000|                        return rMakeGlobal(view.owner);
+       |                }
+0000000|                return rMakeGlobal(this);
+       |        }
+       |        
+       |        TPoint makeLocal( TPoint source ) const {
+0000000|                TPoint rMakeLocal(in TView view) {
+0000000|                        if (view is null) {
+0000000|                                return source;
+       |                        }
+0000000|                        source -= view.origin;
+0000000|                        return rMakeLocal(view.owner);
+       |                }
+0000000|                return rMakeLocal(this);
+       |        }
+       |        
+       |        TView nextView() {
+0000000|                if( this is owner.last )
+0000000|                        return null;
+       |                else
+0000000|                        return next;
+       |        }
+       |        
+       |        TView prevView() {
+0000000|                if( this is owner.first() )
+0000000|                        return null;
+       |                else
+0000000|                        return prev();
+       |        }
+       |        
+       |        TView prev() {
+0000000|                TView res = this;
+0000000|                while( res.next !is this )
+0000000|                        res = res.next;
+0000000|                return res;
+       |        }
+       |        
+       |        void makeFirst() {
+0000000|                putInFrontOf(owner.first());
+       |        }
+       |        
+       |        void putInFrontOf( TView target ) {
+0000000|                TView p, lastView;
+       |                
+0000000|                if( owner !is null && target !is this && target !is nextView() &&
+0000000|                   ( target is null || target.owner is owner)
+       |                   )
+       |                {
+0000000|                        if( (state & sfVisible) == 0 )
+       |                        {
+0000000|                                owner.removeView(this);
+0000000|                                owner.insertView(this, target);
+       |                        }
+       |                        else
+       |                        {
+0000000|                                lastView = nextView();
+0000000|                                p = target;
+0000000|                                while( p !is null && p !is this )
+0000000|                                        p = p.nextView();
+0000000|                                if( p is null )
+0000000|                                        lastView = target;
+0000000|                                state &= ~sfVisible;
+0000000|                                if( lastView is target )
+0000000|                                        drawHide(lastView);
+0000000|                                owner.removeView(this);
+0000000|                                owner.insertView(this, target);
+0000000|                                state |= sfVisible;
+0000000|                                if( lastView !is target )
+0000000|                                        drawShow(lastView);
+0000000|                                if( (options & ofSelectable) != 0 )
+0000000|                                        owner.resetCurrent();
+       |                        }
+       |                }
+       |        }
+       |        
+       |        TView TopView() {
+0000000|                if( TheTopView !is null )
+0000000|                        return TheTopView;
+       |                else
+       |                {
+0000000|                        TView p = this;
+0000000|                        while( p !is null && !(p.state & sfModal) )
+0000000|                                p = p.owner;
+0000000|                        return p;
+       |                }
+       |        }
+       |        
+       |        // That's the way to call the function getting conversion
+       |        void writeBuf(int x, int y, int w, int h, in ref TDrawBuffer b) { 
+0000000|                writeNativeBuf(x,y,w,h,b.getBuffer());
+       |        }
+       |        
+       |        // Called by old code using codepage encoding
+       |        void writeBuf(int x, int y, int w, int h, in CharInfo[] Buffer) {
+0000000|                writeNativeBuf(x, y, w, h, Buffer);
+       |        }
+       |        
+       |        // Used by new code that uses a buffer according to the mode
+       |        void writeNativeBuf(int x, int y, int w, int h, in CharInfo[] Buffer)
+       |        {
+0000000|                int i=0;
+0000000|                uint wB=w;
+       |                //if (TDisplay.getDrawingMode() == TDisplay.unicode16)
+       |                //      wB *= 2;
+0000000|                const(CharInfo)[] b = Buffer;
+0000000|                while (h--) {
+0000000|                        writeView(x, y++, w, b, this);
+0000000|                        b = b[wB..$];
+0000000|                        i++;
+       |                }
+       |        }
+       |        
+       |        static void writeView(int xStart, int line, int xEnd, in CharInfo[] buffer,
+       |                       TView view, int offset = 0, int inShadow = 0, TView target = null)
+       |        {
+0000000|                int x,y,skipInit=0;
+       |                
+0000000|                if (target is null) {// Initial call so initialize
+       |                        // Check line is valid
+0000000|                        if (line<0 || line>=view.size.y) return;
+       |                        // Validate x range
+0000000|                        if (xStart<0) xStart=0;
+0000000|                        if (xEnd>view.size.x)  {
+0000000|                                xEnd=view.size.x;
+       |                        }
+0000000|                        if (xStart>=xEnd) return;
+       |                        // Initialize values
+0000000|                        offset=xStart;
+0000000|                        inShadow=0;
+0000000|                        skipInit=0;
+       |                }
+       |                else
+0000000|                        skipInit=1;
+       |                
+       |                do
+       |                {
+0000000|                        if (skipInit)
+0000000|                                skipInit=0;
+       |                        else
+       |                        {// Pass to the owner or init if that's the first call
+0000000|                                if (!(view.state & sfVisible) ||
+0000000|                                    !view.owner) return;
+       |                                
+       |                                // Make coordinates relative to the owner
+0000000|                                line += view.origin.y;
+0000000|                                x = view.origin.x;
+0000000|                                xStart += x;
+0000000|                                xEnd  += x;
+0000000|                                offset += x;
+       |                                
+       |                                // Apply clipping, and check if the coordinate gets outside
+0000000|                                const TRect clip = view.owner.clip;
+0000000|                                if (line < clip.a.y || line >= clip.b.y) 
+0000000|                                        return;
+0000000|                                if (xStart < clip.a.x)
+0000000|                                        xStart = clip.a.x;
+0000000|                                if (xEnd > clip.b.x) {
+0000000|                                        xEnd = clip.b.x;
+       |                                }
+0000000|                                if (xStart >= xEnd) 
+0000000|                                        return;
+       |                                
+0000000|                                target = view;
+0000000|                                view = view.owner.last;
+       |                        }
+       |                        
+       |                        do
+       |                        {
+0000000|                                view=view.next;
+       |                                // We are visible go to the owner
+0000000|                                if (view is target) break;
+       |                                // Honor the sfVisible bit
+0000000|                                if (!(view.state & sfVisible)) continue;
+       |                                
+       |                                // Check the y range
+0000000|                                y = view.origin.y;
+0000000|                                if (line<y) continue;
+0000000|                                y += view.size.y;
+0000000|                                if (line >= y)
+       |                                {// The line is outside, now check for the shadow
+0000000|                                        if (!(view.state & sfShadow)) continue;
+0000000|                                        y+=shadowSize.y;
+0000000|                                        if (line>=y) continue;
+       |                                        // We are in the shadow line
+0000000|                                        x = view.origin.x;
+0000000|                                        x += shadowSize.x;
+0000000|                                        if (xStart<x) {
+0000000|                                                if (xEnd<=x) continue;
+       |                                                // We are under a shadow. Do the part that isn't under.
+0000000|                                                writeView(xStart, line, x, buffer, view, offset, inShadow, target);
+       |                                                // Now the rest
+0000000|                                                xStart=x;
+       |                                        }
+0000000|                                        x+=view.size.x;
+       |                                } else {// The line is inside, check the X range
+0000000|                                        x=view.origin.x;
+0000000|                                        if (xStart < x) {
+0000000|                                                if (xEnd <= x) continue;
+       |                                                // Do the xStart to view.origin.x part
+0000000|                                                writeView(xStart,line,x,buffer,view,offset,inShadow,target);
+       |                                                // Now the rest
+0000000|                                                xStart=x;
+       |                                        }
+0000000|                                        x+=view.size.x;
+0000000|                                        if (xStart < x) {
+0000000|                                                if (xEnd<=x) return;
+       |                                                // Overlapped, reduce the size
+0000000|                                                xStart=x;
+       |                                        }
+0000000|                                        if (!(view.state & sfShadow)) continue;
+       |                                        // Now add the shadow
+0000000|                                        if (line<view.origin.y+shadowSize.y) continue;
+0000000|                                        x += shadowSize.x;
+       |                                }
+       |                                // This part deals with the part that can be under the shadow
+0000000|                                if (xStart>=x) continue; // No in shadow
+0000000|                                inShadow++;
+0000000|                                if (xEnd<=x) continue;   // Full in shadow
+       |                                // Partially under a shadow, do the shadow part
+0000000|                                writeView(xStart,line,x,buffer,view,offset,inShadow,target);
+       |                                // and now the rest.
+0000000|                                xStart=x;
+0000000|                                inShadow--;
+       |                        }
+0000000|                        while (1);
+       |                        
+       |                        // We get here if we found a portion that can be exposed and need to
+       |                        // check in the owner.
+0000000|                        TGroup owner=view.owner;
+0000000|                        view=owner;
+       |                        // If the owner is unbuffered ...
+0000000|                        if (!owner.buffer)
+       |                        { // and locked avoid drawing
+0000000|                                if (owner.lockFlag) return;
+       |                                // else go deeper
+0000000|                                continue;
+       |                        }
+       |                        // If the owner's buffer isn't the screen do the blit
+0000000|                        if (owner.buffer !is TScreen.screenBuffer) {
+0000000|                                blitBuffer(view, line, xStart, xEnd, offset, buffer, inShadow);
+       |                                // If locked stop here
+0000000|                                if (owner.lockFlag) return;
+0000000|                                continue;
+       |                        }
+       |                        // We are here because the owner is buffered and attached to the screen
+0000000|                        if (line!=TEventQueue.curMouse.where.y ||
+0000000|                            xStart>TEventQueue.curMouse.where.x ||
+0000000|                            xEnd<=TEventQueue.curMouse.where.x)
+       |                        {// The mouse is not in the draw area
+0000000|                                TMouse.resetDrawCounter();
+0000000|                                blitBuffer(view,line,xStart,xEnd,offset, buffer,inShadow);
+0000000|                                if (TMouse.getDrawCounter()==0)
+       |                                {// There was no mouse event
+0000000|                                        if (owner.lockFlag) return;
+0000000|                                        continue;
+       |                                }
+       |                        }
+       |                        // The mouse is in the draw area or an event has occoured during
+       |                        // the above drawing
+0000000|                        TMouse.hide();
+0000000|                        blitBuffer(view,line,xStart,xEnd,offset,buffer,inShadow);
+0000000|                        TMouse.show();
+0000000|                        if (owner.lockFlag) return;
+       |                }
+0000000|                while (1);
+       |        }
+       |        
+       |        static void blitBuffer(TView view, int line, int xStart, int xEnd, int offset,
+       |                        in CharInfo[] buffer, int inShadow)
+       |        {
+0000000|                int count = xEnd - xStart;
+0000000|                int destOffset = line * view.size.x + xStart;
+0000000|                int skipOffset = xStart-offset;
+0000000|                const(CharInfo)[] blitFrom;
+0000000|                TGroup group = cast(TGroup)view;
+0000000|                bool isScreen = group.buffer is TScreen.screenBuffer;
+       |                
+0000000|                        blitFrom = buffer[skipOffset..skipOffset+count];
+       |                        // Remap characters if needed
+0000000|                        CharInfo[] aux = new CharInfo[count];
+0000000|                        if (inShadow) {// is much more efficient to call the OS just once
+0000000|                                aux[] = blitFrom[0..aux.length][];
+0000000|                                for (int i = 0; i < count; i++) {
+0000000|                                        aux[i].attrib = shadowAttr;
+       |                                }
+0000000|                                blitFrom = aux;
+       |                        }
+       |
+0000000|                        if (isScreen)
+0000000|                                TScreen.setCharacters(destOffset, blitFrom[0..count]);
+       |                        else {
+0000000|                                int to = destOffset + count;
+0000000|                                foreach(i, ref v; group.buffer[destOffset..to]) {
+0000000|                                        v = blitFrom[i];
+       |                                }
+       |                        }
+       |        }
+       |        
+       |        void writeLine(int x, int y, int w, int h, in ref TDrawBuffer b) {
+0000000|                writeNativeLine(x,y,w,h,b.getBuffer());
+0000000|                return;
+       |        }
+       |        
+       |        void writeLine(int x, int y, int w, int h, in CharInfo[] Buffer) {
+0000000|                writeNativeLine(x,y,w,h,Buffer);
+       |        }
+       |        
+       |        void writeNativeLine(int x, int y, int w, int h, in CharInfo[] b) {
+0000000|                while (h--) {
+0000000|                        writeView(x,y++, x + w, b, this);
+       |                }
+       |        }
+       |        
+       |        
+       |        void writeChar(int x, int y, wchar c, ubyte color, int count) {
+0000000|                if (count<=0)
+0000000|                        return;
+       |
+0000000|                CharInfo cell = CharInfo(c, mapColor(color));
+0000000|                CharInfo[] temp = new CharInfo[count];
+0000000|                temp[] = cell;
+       |                
+0000000|                writeView(x, y, count, temp, this);
+       |        }
+       |        
+       |        version(TV_BIG_ENDIAN) {
+       |                static uint endianCol(int letraI, ushort color) {
+       |                        ushort letra = cast(ushort)letraI;
+       |                        return (((cast(uint)letra)<<16) | (cast(uint)color));
+       |                }
+       |        } else {
+       |                static uint endianCol(int letraI, ushort color) {
+0000000|                        ushort letra = cast(ushort)letraI;
+0000000|                        return (((cast(uint)color)<<16) | (cast(uint)letra));
+       |                }
+       |        }
+       |        
+       |        void writeStr(int x, int y, string str, ubyte color)
+       |        {
+       |                /*
+       |                 int count=strlen(str),i;
+       |                 if (!count)
+       |                 return;
+       |                 //AllocLocalStr(temp,(count+1)*2);
+       |                 char[] temp = new char((str.len+1)*2);
+       |                 
+       |                 if (TDisplay.getDrawingMode() == TDisplay.unicode16) {// Not in native mode
+       |                 TVCodePage.convertStrCP_2_U16(str);
+       |                 writeStrU16(x,y,(ushort *)temp, color);
+       |                 return;
+       |                 }
+       |                 
+       |                 color=mapColor(color);
+       |                 for (i=0; i<count; i++)
+       |                 {
+       |                 temp[i*2]=str[i];
+       |                 temp[i*2+1]=color;
+       |                 }
+       |                 writeView(x,y,count,temp);
+       |                 */
+       |        }
+       |        
+       |        override void shutDown() {
+0000000|                hide();
+0000000|                if( owner !is null )
+0000000|                        owner.remove( this );
+0000000|                TObject.shutDown();
+       |        }
+       |        
+       |        private void moveGrow( TPoint p,
+       |                              TPoint s,
+       |                              TRect limits,
+       |                              TPoint minSize,
+       |                              TPoint maxSize,
+       |                              ubyte mode
+       |                              )
+       |        {
+0000000|                TRect   r;
+0000000|                s.x = min(max(s.x, minSize.x), maxSize.x);
+0000000|                s.y = min(max(s.y, minSize.y), maxSize.y);
+0000000|                p.x = min(max(p.x, limits.a.x - s.x+1), limits.b.x-1);
+0000000|                p.y = min(max(p.y, limits.a.y - s.y+1), limits.b.y-1);
+       |                
+0000000|                if( (mode & dmLimitLoX) != 0 )
+0000000|                        p.x = max(p.x, limits.a.x);
+0000000|                if( (mode & dmLimitLoY) != 0 )
+0000000|                        p.y = max(p.y, limits.a.y);
+0000000|                if( (mode & dmLimitHiX) != 0 )
+0000000|                        p.x = min(p.x, limits.b.x-s.x);
+0000000|                if( (mode & dmLimitHiY) != 0 )
+0000000|                        p.y = min(p.y, limits.b.y-s.y);
+0000000|                r = TRect(p.x, p.y, p.x +  s.x, p.y +  s.y);
+0000000|                locate(r);
+       |        }
+       |        
+       |        void change( ubyte mode, TPoint delta, TPoint p, TPoint s, int grow = 0 ) {
+0000000|                if( (mode & dmDragMove) != 0 && !grow )
+0000000|                        p += delta;
+0000000|                else if( (mode & dmDragGrow) != 0 && grow )
+0000000|                        s += delta;
+       |        }
+       |        
+       |        override string streamableName() const {
+0000000|                return name; 
+       |        }
+       |        
+       |        override void write( Elem* data ) const {
+       |                
+0000000|                ushort saveState = cast(ushort)(state & ~( sfActive | sfSelected | sfFocused | sfExposed ));
+0000000|                origin.serializeTo(data.origin);
+0000000|                size.serializeTo(data.size);
+0000000|                cursor.serializeTo(data.cursor);
+0000000|                data.growMode.set(growMode);
+0000000|                data.dragMode.set(dragMode);
+0000000|                data.helpCtx.set(helpCtx);
+0000000|                data.state.set(saveState);
+0000000|                data.options.set(options);
+0000000|                data.eventMask.set(eventMask);
+       |        }
+       |        
+       |        override void read( Elem* data ) {
+0000000|                origin.deSerializeFrom(data.origin);
+0000000|                size.deSerializeFrom(data.size);
+0000000|                cursor.deSerializeFrom(data.cursor);
+0000000|                growMode = data.growMode.value!ushort;
+0000000|                dragMode = data.dragMode.value!ushort;
+0000000|                helpCtx = data.helpCtx.value!ushort;
+0000000|                state = data.state.value!ushort;
+0000000|                options = data.options.value!ushort;
+0000000|                eventMask = data.eventMask.value!ushort;
+0000000|                owner = null;
+0000000|                next = null;
+       |        }
+       |        
+0000000|        this(Elem* inStream) {
+0000000|                read(inStream);
+       |        }
+       |
+       |        
+       |}
+..\d\tview.d is 0% covered

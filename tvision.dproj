@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <Platform Condition=" '$(Platform)' == '' ">AnyCPU</Platform>
+    <ProductVersion>10.0.0</ProductVersion>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>{AE9DDB5B-2AF3-4DD6-9CF1-4C41CB49E6B9}</ProjectGuid>
+    <PreferOneStepBuild>true</PreferOneStepBuild>
+    <UseDefaultCompiler>true</UseDefaultCompiler>
+    <IncrementalLinking>true</IncrementalLinking>
+    <Compiler>DMD2</Compiler>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
+    <DebugSymbols>true</DebugSymbols>
+    <OutputPath>bin\Debug</OutputPath>
+    <Externalconsole>true</Externalconsole>
+    <Target>Executable</Target>
+    <OutputName>tvision</OutputName>
+    <UnittestMode>false</UnittestMode>
+    <ObjectsDirectory>obj\Debug</ObjectsDirectory>
+    <DebugLevel>0</DebugLevel>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Release|AnyCPU' ">
+    <OutputPath>bin\Release</OutputPath>
+    <Externalconsole>true</Externalconsole>
+    <Target>Executable</Target>
+    <OutputName>tvision</OutputName>
+    <UnittestMode>false</UnittestMode>
+    <ObjectsDirectory>obj\Release</ObjectsDirectory>
+    <DebugLevel>0</DebugLevel>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Unittest|AnyCPU' ">
+    <DebugSymbols>true</DebugSymbols>
+    <OutputPath>bin\Unittest</OutputPath>
+    <Externalconsole>true</Externalconsole>
+    <Target>Executable</Target>
+    <OutputName>tvision</OutputName>
+    <UnittestMode>true</UnittestMode>
+    <ObjectsDirectory>obj\Unittest</ObjectsDirectory>
+    <DebugLevel>0</DebugLevel>
+    <ExtraCompilerArguments>-version=TVOS_Win32</ExtraCompilerArguments>
+  </PropertyGroup>
+  <ItemGroup>
+    <Folder Include="d\" />
+    <Folder Include="d\win32\" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="d\tcollection.d" />
+    <Compile Include="d\tcommand.d" />
+    <Compile Include="d\tobject.d" />
+    <Compile Include="d\tpalette.d" />
+    <Compile Include="d\tpoint.d" />
+    <Compile Include="d\trect.d" />
+    <Compile Include="d\tsortedcollection.d" />
+    <Compile Include="d\tstreamable.d" />
+    <Compile Include="d\tstringcollection.d" />
+    <Compile Include="d\ttypes.d" />
+    <Compile Include="d\tvconfig.d" />
+    <Compile Include="d\tgkey.d" />
+    <Compile Include="d\tevent.d" />
+    <Compile Include="d\tpartitiontree.d" />
+    <Compile Include="d\teventqueue.d" />
+    <Compile Include="d\tprogram.d" />
+    <Compile Include="d\tdrawbuffer.d" />
+    <Compile Include="d\views.d" />
+    <Compile Include="d\ticks.d" />
+    <Compile Include="d\tdisplay.d" />
+    <Compile Include="d\tscreen.d" />
+    <Compile Include="d\configfile.d" />
+    <Compile Include="d\tview.d" />
+    <Compile Include="d\tgroup.d" />
+    <Compile Include="d\codepage.d" />
+    <Compile Include="d\tdesktop.d" />
+    <Compile Include="d\main.d" />
+    <Compile Include="d\tapplication.d" />
+    <Compile Include="d\win32\win32scr.d" />
+    <Compile Include="d\win32\win32key.d" />
+    <Compile Include="d\win32\win32clip.d" />
+    <Compile Include="d\osclipboard.d" />
+    <Compile Include="d\win32\win32mouse.d" />
+    <Compile Include="d\tbackground.d" />
+    <Compile Include="d\budget.d" />
+    <Compile Include="d\grid.d" />
+    <Compile Include="d\tasklist.d" />
+    <Compile Include="d\teditor.d" />
+    <Compile Include="d\tfiledialog.d" />
+    <Compile Include="d\tfileinfopane.d" />
+    <Compile Include="d\tfilelist.d" />
+    <Compile Include="d\thistory.d" />
+    <Compile Include="d\thistoryviewer.d" />
+    <Compile Include="d\thistorywindow.d" />
+    <Compile Include="d\tlistbox.d" />
+    <Compile Include="d\tlistviewer.d" />
+    <Compile Include="d\tmenu.d" />
+    <Compile Include="d\tsortedlistbox.d" />
+    <Compile Include="TVision\tscroller.d" />
+    <Compile Include="TVision\tstatusline.d" />
+    <Compile Include="d\common.d" />
+    <Compile Include="d\msgbox.d" />
+    <Compile Include="d\progressbar.d" />
+    <Compile Include="d\tbutton.d" />
+    <Compile Include="d\tcheckboxes.d" />
+    <Compile Include="d\tcluster.d" />
+    <Compile Include="d\tdialog.d" />
+    <Compile Include="d\tframe.d" />
+    <Compile Include="d\tinputline.d" />
+    <Compile Include="d\tlabel.d" />
+    <Compile Include="d\tradiobuttons.d" />
+    <Compile Include="d\tscrollbar.d" />
+    <Compile Include="d\tsitem.d" />
+    <Compile Include="d\tstatictext.d" />
+    <Compile Include="d\tvalidator.d" />
+    <Compile Include="d\tvision.d" />
+    <Compile Include="d\twindow.d" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="d\calcdisp.d" />
+    <None Include="d\calculat.d" />
+  </ItemGroup>
+</Project>

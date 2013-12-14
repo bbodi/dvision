@@ -1,0 +1,131 @@
+       |module win32.win32clip;
+       |
+       |import core.sys.windows.windows;
+       |import std.conv;
+       |import osclipboard;
+       |
+       |// need User32.lib
+       |
+       |extern (Windows) HANDLE GetClipboardData( UINT uFormat);
+       |extern (Windows) LPVOID GlobalLock(HGLOBAL hMem);
+       |extern (Windows) BOOL CloseClipboard();
+       |extern (Windows) BOOL OpenClipboard( HWND hWndNewOwner);
+       |extern (Windows) HGLOBAL GlobalAlloc( UINT uFlags, SIZE_T dwBytes);
+       |extern (Windows) BOOL EmptyClipboard();
+       |extern (Windows) HANDLE SetClipboardData(UINT uFormat, HANDLE hMem);
+       |
+       |
+       |struct TVWin32Clipboard {
+       |        static string[] win32NameError= [ null, null];
+       |
+       |        static void Init()
+       |        {
+0000000|                TVOSClipboard.copy = &copy;
+0000000|                TVOSClipboard.paste = &paste;
+0000000|                TVOSClipboard.destroy = &destroy;
+0000000|                TVOSClipboard.available = 1; // We have 1 clipboard
+0000000|                TVOSClipboard.name = "Windows";
+       |                // We get the error from windows, so we just change the pointer
+0000000|                TVOSClipboard.errors = 1;
+0000000|                TVOSClipboard.nameErrors = win32NameError;
+       |        }
+       |        
+       |        static void getErrorString() {
+0000000|                if (win32NameError[1])
+0000000|                        LocalFree(cast(LPVOID)win32NameError[1]);
+       |                
+0000000|                LPVOID lpMsgBuf;
+       |                
+0000000|                FormatMessageA(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM,
+       |                              null,GetLastError(),
+       |                              MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT), // Default language
+       |                              cast(LPTSTR)&lpMsgBuf,0,null);
+0000000|                win32NameError[1] = to!string(cast(const wchar *)lpMsgBuf);
+0000000|                TVOSClipboard.error = 1;
+       |        }
+       |        
+       |        static void destroy()
+       |        {
+0000000|                if (win32NameError[1]) {
+0000000|                        LocalFree(cast(LPVOID)win32NameError[1]);
+       |                }
+       |        }
+       |
+       |        static private const CF_TEXT = 1;
+       |
+       |        static string paste(int id) {
+0000000|                if (id!=0) return null;
+       |                
+0000000|                string p;
+       |                
+0000000|                if (OpenClipboard(null)) {
+0000000|                        HGLOBAL hMem = GetClipboardData(CF_TEXT);
+0000000|                        if (hMem) {
+0000000|                                wchar *d = cast(wchar*)GlobalLock(hMem);
+0000000|                                if (d !is null) {
+0000000|                                        p = to!string(d);
+0000000|                                        GlobalUnlock(hMem);
+       |                                }
+       |                                else {
+0000000|                                        getErrorString();
+       |                                }
+       |                        }
+       |                        else {
+0000000|                                getErrorString();
+       |                        }
+0000000|                        CloseClipboard();
+       |                }
+       |                else {
+0000000|                        getErrorString();
+       |                }
+       |                
+0000000|                return p;
+       |        }
+       |
+       |        static private const    GMEM_MOVEABLE = 0x0002;
+       |
+       |        static int copy(int id, in char[] buffer) {
+0000000|                if (id!=0) return 0;
+0000000|                if (!buffer) return 1;
+       |                
+0000000|                HGLOBAL hMem = GlobalAlloc(GMEM_MOVEABLE, buffer.length+1);
+0000000|                if (!hMem) {
+0000000|                        getErrorString();
+0000000|                        return 0;
+       |                }
+       |                
+0000000|                char *d = cast(char *)GlobalLock(hMem);
+0000000|                if (!d) {
+0000000|                        getErrorString();
+0000000|                        GlobalFree(hMem);
+0000000|                        return 0;
+       |                }
+       |                //memcpy(d, buffer,len);
+0000000|                foreach(ch; buffer) {
+0000000|                        *d = cast(char)ch;
+       |                }
+0000000|                d[buffer.length] = 0;
+0000000|                GlobalUnlock(hMem);
+       |                
+0000000|                if (OpenClipboard(null)) {
+0000000|                        EmptyClipboard();
+0000000|                        if (SetClipboardData(CF_TEXT, hMem)) {
+0000000|                                CloseClipboard();
+       |                                // Windows now owns the memory, we doesn't have to release it.
+0000000|                                return 1;
+       |                        }
+0000000|                        getErrorString();
+0000000|                        CloseClipboard();
+       |                }
+       |                else
+0000000|                        getErrorString();
+0000000|                GlobalFree(hMem);
+       |                
+0000000|                return 0;
+       |        }
+       |
+       |
+       |}
+       |
+       |
+..\d\win32\win32clip.d is 0% covered

@@ -1,0 +1,27 @@
+       |module tapplication;
+       |
+       |import tprogram;
+       |import tscreen;
+       |import teventqueue;
+       |
+       |abstract class TApplication : TProgram {
+       |
+       |        void resume() {
+0000000|                TScreen.resume();
+0000000|                TEventQueue.resume(TScreen.getCols(), TScreen.getRows());
+0000000|                resetIdleTime(); // Don't count this time
+       |        }
+       |        
+       |        void suspend() {
+0000000|                TEventQueue.suspend();
+0000000|                TScreen.suspend();
+       |        }
+       |        
+0000000|        this() {
+0000000|                TEventQueue.init(TScreen.getCols(), TScreen.getRows());
+       |        }
+       |        
+       |        ~this() {
+       |        }
+       |}
+..\d\tapplication.d is 0% covered

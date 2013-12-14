@@ -1,0 +1,347 @@
+       |module tprogram;
+       |
+       |//import core.stdc.time;
+       |import std.datetime;
+       |import core.thread;
+       |
+       |import tvision;
+       |
+       |version(TVOS_Win32) {
+       |        static private void CLY_ReleaseCPU() {
+0000000|                Thread.sleep( dur!("msecs")( 50 ) );  // sleep for 50 
+       |        }
+       |}
+       |
+       |const apColor      = 0;
+       |const apBlackWhite = 1;
+       |const apMonochrome = 2;
+       |
+       |private static const ubyte[] cpColor = cast(ubyte[])"\x71\x70\x78\x74\x20\x28\x24\x17\x1F\x1A\x31\x31\x1E\x71\x00"
+       |    "\x37\x3F\x3A\x13\x13\x3E\x21\x00\x70\x7F\x7A\x13\x13\x70\x7F\x00" 
+       |    "\x70\x7F\x7A\x13\x13\x70\x70\x7F\x7E\x20\x2B\x2F\x78\x2E\x70\x30" 
+       |    "\x3F\x3E\x1F\x2F\x1A\x20\x72\x31\x31\x30\x2F\x3E\x31\x13\x38\x00";
+       |
+       |private static const ubyte[] cpBlackWhite = cast(ubyte[])"\x70\x70\x78\x7F\x07\x07\x0F\x07\x0F\x07\x70\x70\x07\x70\x00"
+       |"\x07\x0F\x07\x70\x70\x07\x70\x00\x70\x7F\x7F\x70\x07\x70\x07\x00"
+       |"\x70\x7F\x7F\x70\x07\x70\x70\x7F\x7F\x07\x0F\x0F\x78\x0F\x78\x07"
+       |"\x0F\x0F\x0F\x70\x0F\x07\x70\x70\x70\x07\x70\x0F\x07\x07\x07\x00";
+       |
+       |private static const ubyte[] cpMonochrome = cast(ubyte[])"\x70\x07\x07\x0F\x70\x70\x70\x07\x0F\x07\x70\x70\x07\x70\x00"
+       |"\x07\x0F\x07\x70\x70\x07\x70\x00\x70\x70\x70\x07\x07\x70\x07\x00" 
+       |"\x70\x70\x70\x07\x07\x70\x70\x70\x0F\x07\x07\x0F\x70\x0F\x70\x07" 
+       |"\x0F\x0F\x07\x70\x07\x07\x70\x07\x07\x07\x70\x0F\x07\x07\x07\x00";
+       |
+       |private immutable TPalette color = immutable(TPalette)( cpColor );
+       |private immutable TPalette blackwhite = immutable(TPalette)( cpBlackWhite );
+       |private immutable TPalette monochrome = immutable(TPalette)( cpMonochrome );
+       |private immutable(TPalette)*[] palettes =  [&color, &blackwhite, &monochrome];
+       |
+       |abstract class TProgram : TGroup {
+       |
+       |        static TProgram application;
+       |        static TDesktop deskTop;
+       |        static TStatusLine statusLine;
+       |        static TMenuBar  menuBar;
+       |        static int appPalette = apColor;
+       |        static TEvent pending;
+       |        static TickDuration lastIdleClock = TickDuration.zero;
+       |        static TickDuration inIdleTime = TickDuration.zero;
+       |        static bool inIdle;
+       |        static byte    doNotReleaseCPU = 0;
+       |        static byte    doNotHandleAltNumber = 0;
+       |
+       |        // Indicates that we are in idle, a mouse or 
+       |        // keyboard event resets it    
+       |
+0000000|        static void resetIdleTime() { inIdle=false; };
+       |
+       |        private TScreen screen;
+       |
+       |        TStatusLine createStatusLine(TRect r) const {
+0000000|        r.a.y = r.b.y - 1;
+0000000|        return new TStatusLine( r,
+       |                                                           [TStatusDef( 0, 0xFFFF, [
+       |                TStatusItem( "~Alt-X~ Exit", KeyCode.kbAltX, cm.Quit ),
+       |                                TStatusItem( "~Alt-3~ Close", KeyCode.kbAltF3, cm.Close ),
+       |                                TStatusItem( "~F5~ Zoom", KeyCode.kbF5, cm.Zoom ),
+       |                                TStatusItem( "~Ctrl-F5~ Resize", KeyCode.kbCtrlF5, cm.Resize ),
+       |                                TStatusItem( "~F6~ Next", KeyCode.kbF6, cm.Next ),
+       |          ]
+       |        )]);
+       |        }
+       |
+       |        TMenuBar createMenuBar(TRect r) const {
+0000000|                r.b.y = r.a.y + 1;
+0000000|                TSubMenu sub1 = new TSubMenu("~-~", KeyCode.kbNoKey, hcNoContext);
+0000000|                sub1.add(new TMenuItem("~A~bout...", cm.About, KeyCode.kbNoKey, hcNoContext));
+0000000|                return new TMenuBar(r, sub1);
+       |        }
+       |
+       |        TDesktop createDeskTop(in TRect extent) const {
+0000000|                TRect r = extent;
+0000000|                if (menuBar)
+0000000|                        r.a.y += menuBar.size.y;
+       |                else
+0000000|                        r.a.y++;
+0000000|                if (statusLine)
+0000000|                        r.b.y -= statusLine.size.y;
+       |                else
+0000000|                        r.b.y--;
+0000000|                return new TDesktop( r );
+       |        }
+       |
+0000000|        this()  {
+0000000|                super(TRect( 0, 0, TScreen.screenWidth, TScreen.screenHeight ));
+0000000|                progInit();
+0000000|                changeBounds(TRect( 0, 0, TScreen.screenWidth, TScreen.screenHeight ));
+0000000|                application = this;
+0000000|                initScreen();
+0000000|                state = sfVisible | sfSelected | sfFocused | sfModal | sfExposed;
+0000000|                options = 0;
+0000000|                syncScreenBuffer();
+       |                
+0000000|                if( TScreen.noUserScreen() )
+0000000|                        disableCommand( cm.CallShell );
+       |
+0000000|                statusLine = createStatusLine(getExtent());
+0000000|                if (statusLine !is null) {
+0000000|                        insert(statusLine);
+       |                }
+0000000|                menuBar = createMenuBar(getExtent());
+0000000|                if (menuBar !is null) {
+0000000|                        insert(menuBar);
+       |                }
+0000000|                deskTop = createDeskTop(getExtent());
+0000000|                if (deskTop !is null) {
+0000000|                        insert(deskTop);
+       |                }
+       |        }
+       |
+       |        import win32.win32scr;
+       |        import tscreen;
+       |        static this() {
+       |                version(TVOS_DOS) {
+       |                        Drivers ~= stDriver( TV_DOSDriverCheck, 100, "DOS" );
+       |                }
+       |                version(TVOS_UNIX) {
+       |                        version(HAVE_X11) {
+       |                                Drivers ~= stDriver( TV_XDriverCheck, 100, "X11" );
+       |                        }
+       |                        version(TVOSf_Linux) {
+       |                                Drivers ~= stDriver( TV_LinuxDriverCheck, 90, "Linux" );
+       |                        }
+       |                        version(TVOSf_QNXRtP) {
+       |                                Drivers ~= stDriver( TV_QNXRtPDriverCheck, 90, "QNX" );
+       |                        } else {
+       |                                version(TVOSf_QNX4) {
+       |                                        Drivers ~= stDriver( TV_QNX4DriverCheck, 90, "QNX4" );
+       |                                } // TVOSf_QNX4
+       |                                Drivers ~= stDriver( TV_XTermDriverCheck, 60, "XTerm" );
+       |                                version(HAVE_NCURSES) {
+       |                                        Drivers ~= stDriver( TV_UNIXDriverCheck, 10, "UNIX" );
+       |                                }
+       |                        } // TVOSf_QNXRtP
+       |                }
+       |
+       |                version(TVOS_Win32) {
+       |                        version(HAVE_X11) {
+       |                                // This is experimental, but believe it or not Cygwin have X11 support
+       |                                //Drivers ~= stDriver( TV_XDriverCheck,     100, "X11" );
+       |                        } // HAVE_X11
+       |                        version(TVOSf_NT) {
+       |                                //Drivers ~= stDriver( &TV_WinNTDriverCheck,  90, "WinNT" );
+       |                                version(TV_Disable_WinGr_Driver) {
+       |                                        // Nothing
+       |                                } else{
+       |                                        //Drivers ~= stDriver( &TV_WinGrDriverCheck,  80, "WinGr" );
+       |                                }
+       |                                Drivers ~= stDriver( &TV_Win32DriverCheck,  50, "Win32" );
+       |                        } else {
+      1|                                TScreen.registerDriver(TScreen.stDriver( &TV_Win32DriverCheck, &TScreenWin32.deInit, 90, "Win32" ));
+       |                                version(TV_Disable_WinGr_Driver) {
+       |                                        // Nothing
+       |                                } else{
+       |                                        //      Drivers ~= stDriver( &TV_WinGrDriverCheck,  80, "WinGr" );
+       |                                }
+       |                                //Drivers ~= stDriver( &TV_WinNTDriverCheck,  50, "WinNT" );
+       |                        }
+       |                }
+       |
+       |                version(HAVE_ALLEGRO) {
+       |                        Drivers ~= stDriver( TV_AlconDriverCheck,  30, "AlCon" );
+       |                }
+       |        //      nDrivers = Drivers.length;
+       |        }
+       |
+       |        private void progInit() {
+       |                // Load the configuration file
+       |                //config.Load();
+       |                // Read common settings
+0000000|                long aux;
+       |                /*if (config.Search("ShowCursorEver",aux))
+       |                        TScreen.setShowCursorEver(aux ? true : false);
+       |                if (config.Search("DontMoveHiddenCursor",aux))
+       |                        TScreen.setDontMoveHiddenCursor(aux ? true : false);*/
+0000000|                TScreen.setShowCursorEver(true);
+0000000|                screen = new TScreen();
+       |        }
+       |
+       |
+       |
+       |        void initScreen() {
+0000000|                if( !TDisplay.dual_display && (TScreen.screenMode & 0x00FF) != TDisplay.VideoModes.smMono ) {
+0000000|                        if( (TScreen.screenMode & TDisplay.VideoModes.smFont8x8) != 0 )
+0000000|                                shadowSize.x = 1;
+       |                        else
+0000000|                                shadowSize.x = 2;
+0000000|                        shadowSize.y = 1;
+0000000|                        showMarkers = false;
+0000000|                        if( (TScreen.screenMode & 0x00FF) == TDisplay.VideoModes.smBW80 )
+0000000|                                appPalette = apBlackWhite;
+       |                        else
+0000000|                                appPalette = apColor;
+       |                } else {
+0000000|                        shadowSize.x = 0;
+0000000|                        shadowSize.y = 0;
+0000000|                        showMarkers = true;
+0000000|                        appPalette = apMonochrome;
+       |                }
+       |        }
+       |
+       |        void syncScreenBuffer() {
+0000000|                buffer = TScreen.screenBuffer;
+       |        }
+       |
+       |        void run() {
+0000000|                execute();
+0000000|                deInit();
+       |        }
+       |
+       |        private void deInit() {
+0000000|                TScreen.deInit();
+       |        }
+       |
+       |        override void putEvent( ref TEvent event ) {
+0000000|        pending = event;
+       |        }
+       |
+       |        private TickDuration Clock() const {
+0000000|                return TickDuration.currSystemTick();
+       |        }
+       |
+       |        override void getEvent(ref TEvent event) {
+0000000|                if( pending.what != evNothing ) {
+0000000|                        event = pending;
+0000000|                        pending.what = evNothing;
+0000000|                        inIdle=false;
+       |                } else {
+0000000|                        event.getMouseEvent();
+0000000|                        if( event.what == evNothing ) {
+0000000|                                event.getKeyEvent();
+0000000|                                if( event.what == evNothing ) {
+0000000|                                        if( inIdle ) {
+0000000|                                                TickDuration t = Clock();
+0000000|                                                inIdleTime += t - lastIdleClock;
+0000000|                                                lastIdleClock = t;
+       |                                        } else {
+0000000|                                                inIdleTime = TickDuration.zero;
+0000000|                                                lastIdleClock = Clock();
+0000000|                                                inIdle = true;
+       |                                        }
+0000000|                                        if (TScreen.checkForWindowSize()) {
+0000000|                                                event.getKeyEvent();
+       |
+0000000|                                                setScreenMode(0xFFFF);
+0000000|                                                CLY_Redraw();
+       |                                        }
+0000000|                                        idle();
+       |                                }
+       |                                else {
+0000000|                                        inIdle=false;
+       |                                }
+       |                        } else {
+0000000|                                inIdle=false;
+       |                        }
+       |                }
+       |                
+0000000|                if( statusLine !is null ) {
+0000000|                        if( (event.what & evKeyDown) != 0 || ( (event.what & evMouseDown) != 0)) {
+0000000|                                if (firstThat( &hasMouse, &event ) == statusLine) {
+0000000|                                        statusLine.handleEvent( event );
+       |                                }
+       |                        }
+       |                }
+       |        }
+       |
+       |        void setScreenMode( ushort mode, string command = null ) {
+0000000|                TRect  r;
+0000000|                TMouse.hide();
+0000000|                if (!TDisplay.dual_display) {
+0000000|                        if (mode == 0xFFFF && command)
+0000000|                                TScreen.setVideoModeExt( command );
+       |                        else
+0000000|                                TScreen.setVideoMode( mode );
+       |                }
+0000000|                initScreen();
+0000000|                syncScreenBuffer();
+0000000|                r = TRect( 0, 0, TScreen.screenWidth, TScreen.screenHeight );
+0000000|                changeBounds( r );
+0000000|                setState( sfExposed, false);
+0000000|                redraw();
+0000000|                setState(sfExposed, true);
+0000000|                TMouse.show();
+       |        }
+       |
+       |        void idle() {
+0000000|                if( statusLine !is null )
+0000000|                        statusLine.update();
+       |                
+0000000|                if( commandSetChanged == true ) {
+0000000|                        message( this, evBroadcast, cm.CommandSetChanged, 0 );
+0000000|                        commandSetChanged = false;
+       |                }
+       |                // SET: Release the CPU unless the user doesn't want it.
+0000000|                if( !doNotReleaseCPU ) {
+0000000|                        CLY_ReleaseCPU(); // defined in ticks.cc
+       |                }
+       |        }
+       |
+       |        private static bool hasMouse( TView p, void *s ) {
+0000000|        return (p.state & sfVisible) != 0 &&
+0000000|                     p.mouseInView( (cast(TEvent *)s).mouse.where );    
+       |    }
+       |
+       |    override ref immutable(TPalette) getPalette() const {
+0000000|        return *(palettes[appPalette]);
+       |        }
+       |
+       |        override void handleEvent( ref TEvent event ) {
+0000000|        if( !doNotHandleAltNumber && event.what == evKeyDown ){
+0000000|                char c = TGKey.GetAltChar( event.keyDown.keyCode, event.keyDown.charScan.charCode );
+0000000|                if( c >= '1' && c <= '9' ) {
+0000000|                                if (current.valid(cm.ReleasedFocus)) {
+0000000|                                        auto selectedWindow = message( deskTop, evBroadcast, cm.SelectWindowNum, cast(void *)(c - '0'));
+0000000|                                        if(  selectedWindow !is null ) {
+0000000|                           clearEvent( event );
+       |                       }
+       |                                }
+       |                        }
+       |                }
+0000000|            TGroup.handleEvent( event );
+0000000|            if( event.what == evCommand && event.message.command == cm.Quit ) { 
+0000000|                endModal( cm.Quit ); 
+0000000|                clearEvent( event );
+       |                }
+       |        }
+       |
+       |        TView validView(TView p) {
+0000000|        if( p is null )
+0000000|                return null;
+0000000|        if( !p.valid( cm.Valid ) ) {
+0000000|                CLY_destroy( p );
+0000000|                return null;
+       |        }
+0000000|        return p;
+       |        }
+       |}
+..\d\tprogram.d is 0% covered

@@ -1,0 +1,46 @@
+       |module tbackground;
+       |
+       |import tview;
+       |import trect;
+       |import tdrawbuffer;
+       |import tpalette;
+       |import tscreen;
+       |import tdesktop;
+       |
+       |private const ubyte[] cpBackground = [1];//cast(ubyte[])"\x01";      // background palette
+       |private immutable TPalette palette = immutable(TPalette)( cpBackground );
+       |
+       |class TBackground : TView {
+       |
+       |        private char pattern;
+       |
+0000000|        this( const TRect bounds, char aPattern ) {
+0000000|                super(bounds);
+0000000|                pattern = aPattern;
+0000000|                growMode = gfGrowHiX | gfGrowHiY;
+       |        }
+       |
+       |        void changePattern(char newP) { 
+0000000|                pattern = newP; 
+0000000|                draw(); 
+       |        }
+       |
+       |        wchar getPattern() {
+0000000|                return pattern; 
+       |        }
+       |
+       |        override void draw() {
+0000000|                TDrawBuffer b;
+       |                
+0000000|                wchar ch = pattern;
+0000000|                if( TScreen.avoidMoire && ch == TDesktop.defaultBkgrnd )
+0000000|                        ch = TView.noMoireFill;
+0000000|                b.moveChar( 0, ch, getColor(0x01), size.x );
+0000000|                writeLine( 0, 0, size.x, size.y, b );
+       |        }
+       |        
+       |        override ref immutable(TPalette) getPalette() const {
+0000000|                return palette;
+       |        }
+       |}
+..\d\tbackground.d is 0% covered

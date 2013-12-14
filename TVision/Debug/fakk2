@@ -1,0 +1,13 @@
+core.exception.AssertError@tframe(25): unittest failure
+----------------
+0x00439CFD in onAssertErrorMsg
+0x00424A80 in tframeTFrame__unittestL22_1 at D:\D\projects\tvision\TVision\..\tframe.d(30)
+0x00425BC8 in void tframe.__modtest()
+0x00447D99 in coreruntimerunModuleUnitTests__foreachbody349
+0x004508F7 in rtminfomoduleinfos_apply__foreachbody554
+0x0043DC2D in _d_run_main
+0x004389E0 in main
+0x74C033AA in BaseThreadInitThunk
+0x772B9EF2 in RtlInitializeExceptionChain
+0x772B9EC5 in RtlInitializeExceptionChain
+[32, 32, 32, 195, 128, 32, 194, 179, 195, 154, 195, 131, 32, 195, 153, 195, 132, 195, 129, 194, 191, 194, 180, 195, 130, 195, 133, 32, 32, 32, 195, 136, 32, 194, 186, 195, 137, 195, 135, 32, 194, 188, 195, 141, 195, 143, 194, 187, 194, 182, 195, 145, 32]   À ³ÚÃ ÙÄÁ¿´ÂÅ   È ºÉÇ ¼ÍÏ»¶Ñ 

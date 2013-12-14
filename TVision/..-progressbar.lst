@@ -1,0 +1,108 @@
+       |module progressbar;
+       |
+       |import std.conv;
+       |
+       |import tvision;
+       |
+       |private immutable ubyte[] cpProgressBar = [0x04];
+       |private immutable TPalette palette = immutable(TPalette)( cpProgressBar);
+       |
+       |
+       |class ProgressBar : TView {
+       |
+       |        private char          backChar;   // background character
+       |        private int total;      // total iterations to complete 100 %
+       |        private int progress;   // current iteration value
+       |        private wchar[]       bar;           // thermometer bar
+       |        private int  dispLen;    // length of bar
+       |        private int  curPercent; // current percentage
+       |        private int  curWidth;
+       |        private int  numOffset;  // offset in the string to display the percentage
+       |        private double        charValue;
+       |
+0000000|        this(in TRect bounds, int aTotal, char aBackChar = 'a') {
+0000000|                super(bounds);
+0000000|            backChar = aBackChar;
+0000000|            total = aTotal;
+0000000|            numOffset = (size.x/2)-3;
+0000000|            bar = new wchar[size.x];
+0000000|            bar[] = backChar;
+0000000|            charValue = 100.0/size.x;
+0000000|            progress = curPercent = curWidth = 0;
+       |        }
+       |
+       |        override void draw() {
+0000000|                char[] str = to!(char[])(curPercent);
+       |                /*if(curPercent < 10) {
+       |                        str[2] = str[0];
+       |                        str[1] = str[0] = ' ';
+       |                } else if(curPercent<100 && curPercent>9) {
+       |                str[2] = str[1];
+       |                str[1] = str[0];
+       |                str[0] = ' ';
+       |                }*/
+0000000|                TDrawBuffer nbuf;
+0000000|                short colorNormal = getColor(1);
+0000000|                int fore = colorNormal >> 4;                    // >>4 is same as /16
+0000000|                int colorHiLite = fore+((colorNormal-(fore<<4))<<4); // <<4 is same as *16
+0000000|                nbuf.moveChar(0,backChar,colorNormal,size.x);
+0000000|                nbuf.moveStr(numOffset, str, colorNormal);
+0000000|                nbuf.moveStr(numOffset+3," %",colorNormal);
+0000000|                for(int i=0; i < curWidth; i++) {
+0000000|                        nbuf.putAttribute(i, colorHiLite);
+       |                }
+0000000|                writeLine(0, 0, size.x, 1, nbuf);
+       |        }
+       |
+       |
+       |        override ref immutable(TPalette) getPalette() const {
+0000000|                return palette;
+       |        }
+       |
+       |
+       |        void update(int aProgress) {
+0000000|                progress = aProgress;
+0000000|                calcPercent();
+0000000|                drawView();
+       |        }
+       |
+       |        private void calcPercent() {
+0000000|                int percent = cast(int) ( (cast(double)progress/cast(double)total) * 100.0 );
+       |
+0000000|                if(percent != curPercent) {
+0000000|                        curPercent = percent;
+0000000|                        int width = cast(int)(cast(double)curPercent/charValue);
+       |
+0000000|                        if(width != curWidth) {
+0000000|                                curWidth = width; 
+       |                        }
+       |            }
+       |        }
+       |
+       |        int getTotal() {
+0000000|           return total;
+       |        }
+       |
+       |        int getProgress() {
+0000000|           return progress;
+       |        }
+       |
+       |        void setTotal(int newTotal) {
+0000000|                int tmp = total;
+0000000|                total = newTotal;
+0000000|                bar[] = backChar;
+0000000|                curWidth   = 0; 
+0000000|                progress   = 0; 
+0000000|                curPercent = 0; 
+0000000|                if (tmp) {
+0000000|                        drawView();
+       |                }
+       |        }
+       |
+       |        void setProgress(int newProgress) {
+0000000|                progress = newProgress;
+0000000|                calcPercent();
+0000000|                drawView();                       // paint the thermometer bar
+       |        }
+       |}
+..\progressbar.d is 0% covered

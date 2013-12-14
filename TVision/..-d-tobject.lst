@@ -1,0 +1,19 @@
+       |module tobject;
+       |
+       |void destroy0(ref TObject o) {
+0000000|        CLY_destroy(o);
+0000000|        o = null;
+       |}
+       |
+       |void CLY_destroy( TObject o ) {
+0000000|        if( o !is null ) {
+0000000|                o.shutDown();
+       |        }
+       |        //delete o;     
+       |}
+       |
+       |abstract class TObject {
+       |        void shutDown() {
+       |        }
+       |}
+..\d\tobject.d is 0% covered

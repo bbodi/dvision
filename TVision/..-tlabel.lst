@@ -1,0 +1,117 @@
+       |module tlabel;
+       |
+       |import std.uni;
+       |
+       |import tvision;
+       |import tstatictext;
+       |
+       |private immutable ubyte[] cpLabel = [0x07, 0x08, 0x09, 0x09, 0x0D, 0x0D];
+       |private immutable TPalette palette = immutable (TPalette)( cpLabel );
+       |
+       |class TLabel : TStaticText {
+       |        private TView link;
+       |        private bool light;
+       |
+0000000|        this( in TRect bounds, string aText, TView aLink) {
+0000000|                super(bounds, aText);
+0000000|                init( aLink );
+       |        }
+       |
+0000000|        this( int x, int y, string aText, TView aLink) {
+0000000|                this(TRect(x, y, x, y), aText, aLink);
+0000000|                growTo(aText.lenWithoutTides+1, 1); 
+       |        }
+       |
+       |        void init( TView aLink ) {
+0000000|                link = aLink;
+0000000|                light = false;
+0000000|                options |= ofPreProcess | ofPostProcess;
+0000000|                eventMask |= evBroadcast;
+       |                // This class can be "Braille friendly"
+0000000|                if (TScreen.getShowCursorEver())
+0000000|                        state |= sfCursorVis;
+       |        }
+       |
+       |        override void shutDown() {
+0000000|                link = null;
+0000000|                TStaticText.shutDown();
+       |        }
+       |
+       |        // SET: Now labels propagate the disabled state.
+       |        override void setState( ushort aState, bool enable ) {
+0000000|                TView.setState( aState, enable );
+0000000|                if( aState == sfDisabled ) {
+0000000|                        link.setState( aState, enable );
+0000000|                        drawView();
+       |                }
+       |        }
+       |
+       |        override void draw() {
+0000000|                ushort color;
+0000000|                ubyte scOff;
+       |
+0000000|                if( state & sfDisabled ) {// SET: Now disabled labels shows it
+0000000|                        color = getColor(0x0605);
+0000000|                        scOff = 4;
+       |                } else {
+0000000|                        if( light ) {
+0000000|                                color = getColor(0x0402);
+0000000|                                scOff = 0;
+       |                        } else {
+0000000|                                color = getColor(0x0301);
+0000000|                                scOff = 4;
+       |                        }
+       |                }
+       |
+0000000|                TDrawBuffer b;
+0000000|                b.moveChar( 0, ' ', color, size.x );
+0000000|                if( text !is null )     {
+0000000|                        b.moveCStr( 1, text, color );
+0000000|                        if( light ) {// Usually this will do nothing because the focus is in the linked
+       |                                // object
+0000000|                                setCursor( 1 , 0 );
+0000000|                                resetCursor();
+       |                        }
+       |                }
+0000000|                if( showMarkers )
+0000000|                        b.putChar( 0, specialChars[scOff] );
+0000000|                writeLine( 0, 0, size.x, 1, b );
+       |        }
+       |
+       |        override ref immutable(TPalette) getPalette() const {
+0000000|                return palette;
+       |        }
+       |
+       |        private bool validLink() {
+0000000|                return link && (link.options & ofSelectable) &&
+0000000|                        !(link.state & sfDisabled);
+       |        }
+       |
+       |        override void handleEvent( ref TEvent event ) {
+0000000|                TStaticText.handleEvent(event);
+0000000|                if( event.what == evMouseDown ) {
+0000000|                        if( validLink() )
+0000000|                                link.select();
+0000000|                        clearEvent( event );
+0000000|                } else if( event.what == evKeyDown ) {
+0000000|                        char c = hotKey( text );
+0000000|                        if( TGKey.GetAltCode(c) == event.keyDown.keyCode ||
+0000000|                           ( c != 0 && owner.phase == phaseType.phPostProcess &&
+0000000|                                CompareUpperASCII(event.keyDown.charScan.charCode, c) )
+       |                           )
+       |                        {
+0000000|                                if( validLink() )
+0000000|                                        link.select();
+0000000|                                clearEvent( event );
+       |                        }
+0000000|                } else if( event.what == evBroadcast &&
+0000000|                                ( event.message.command == cm.ReceivedFocus ||
+0000000|                                 event.message.command == cm.ReleasedFocus )
+       |                                ) {
+0000000|                        light = (link.state & sfFocused) != 0 ;
+0000000|                        drawView();
+       |                }
+       |        }
+       |
+       |}
+..\tlabel.d is 0% covered

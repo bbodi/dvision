@@ -1,0 +1,24 @@
+       |module tsitem;
+       |
+       |struct TSItem {
+       |        string value;
+       |        TSItem *next;
+       |
+       |        void opOpAssign(string op)(TSItem *other) if (op == "+=") {
+       |                append(other);
+       |        }
+       |
+       |        TSItem* opBinary(string op)(TSItem *other)  if (op == "+") {
+       |                TSItem ret = new TSItem(value, next);
+       |                ret.append(other);
+       |                return ret;
+       |        }
+       |
+       |        void append( TSItem *aNext ) {
+0000000|                TSItem *item = &this;
+0000000|                for ( ; item.next; item = item.next ){
+       |                }
+0000000|                item.next = aNext;
+       |        }
+       |}
+..\tsitem.d is 0% covered

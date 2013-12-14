@@ -1,0 +1,212 @@
+       |module tdrawbuffer;
+       |
+       |import std.algorithm;
+       |import std.utf;
+       |
+       |import common;
+       |import tvconfig;
+       |import codepage;
+       |import tdisplay;
+       |
+       |struct TDrawBuffer {
+       |
+       |        private CharInfo[maxViewWidth] data;
+       |
+       |        private int offset;
+       |        private int attrib;
+       |
+       |        void setOffset(int o) {
+0000000|                offset = o;
+       |        }
+       |
+       |        void setAttrib(int o) {
+0000000|                attrib = o;
+       |        }
+       |
+       |        const(CharInfo[]) getBuffer() const {
+0000000|                return data;
+       |        }
+       |
+       |        private static ushort setLowByte(ushort w, ubyte value) {
+0000000|                return (w&0xFF00) | value;
+       |        }
+       |
+       |        private static ushort setHighByte(ushort w, ubyte value) {
+0000000|                return (w&0x00FF) | (value<<8);
+       |        }
+       |
+       |/**[txh]********************************************************************
+       |
+       |  Description:
+       |  Copies count bytes from source to the data buffer starting at indent. The
+       |function uses the provided attribute, but if the attribute is 0 the attribute
+       |in the buffer is unmodified.@p
+       |  Added a check to avoid writings passing the end of the buffer.@p
+       |
+       |***************************************************************************/
+       |        
+       |        void putAttribute(uint indent, uint attr ) 
+       |        in {
+     18|                assert(indent + offset < maxViewWidth);
+       |        } body {
+     18|                data[offset+indent].attrib = cast(ubyte)attr;
+       |        }
+       |
+       |        void putChar( uint indent, wchar c ) 
+       |        in {
+     41|                assert(indent + offset < maxViewWidth);
+       |        } body {
+     41|                data[offset+indent].ch = c;
+       |        }
+       |
+       |        void moveBuf(S)(const uint indent, in S src, uint attr, uint count) {
+      5|                if (attrib != 0) {
+0000000|                        attr = attrib;
+       |                }
+     10|                if (!count || (indent >= cast(uint)maxViewWidth))  {
+0000000|                        return;
+       |                }
+      5|                count = min(std.utf.count(src), maxViewWidth, count);
+       |                
+      5|                S srcData = src.dup;
+      5|                int dstIndex = indent;
+     28|                while(count > 0) {
+     23|                        putChar(dstIndex, cast(wchar)decodeFront(srcData));
+     23|                        if (attr != 0) {
+0000000|                                putAttribute(dstIndex, cast(ubyte)attr);
+       |                        }
+     23|                        dstIndex++;
+     23|                        --count;
+       |                }
+       |        }
+       |
+       |        version (unittest) {
+       |                import std.conv;
+       |                static void assertEquals(TDrawBuffer b, int len, string expected) {
+     42|                        assert( equal(map!(a => a.ch)(cast(CharInfo[])b.data[0..len]), expected) );
+       |                }
+       |        }
+       |        unittest {
+      1|                TDrawBuffer b;
+      1|                b.moveBuf(0, "être\u03bb\u20AC", 0, 6);
+      1|                assertEquals(b, 6, "être\u03bb\u20AC");
+       |
+      1|                b.moveBuf(0, "123456789", 0, 2);
+      1|                assertEquals(b, 2, "12");
+      1|                b.moveBuf(0, "123", 0, 6);
+      1|                assertEquals(b, 3, "123");
+       |
+      1|                b.moveBuf(0, "être\u03bb\u20AC"w, 0, 6);
+      1|                assertEquals(b, 6, "être\u03bb\u20AC");
+      1|                b.moveBuf(0, "être\u03bb\u20AC"d, 0, 6);
+      1|                assertEquals(b, 6, "être\u03bb\u20AC");
+       |        }
+       |        
+       |/**[txh]********************************************************************
+       |
+       |  Description:
+       |  Fills count bytes in the buffer starting at the indent position. If the
+       |attribute is 0 the original is left unchanged. If the character is 0 only
+       |the attribute is used.@p
+       |  Added a check to avoid writings passing the end of the buffer.@p
+       |
+       |***************************************************************************/
+       |        
+       |        void moveChar(uint indent, wchar c, uint attr, uint count ) {
+0000000|                if (attrib != 0) {
+0000000|                        attr = attrib;
+       |                }
+0000000|                if (!count || (indent >= cast(uint)maxViewWidth))  {
+0000000|                        return;
+       |                }
+0000000|                if (count+indent > cast(uint)maxViewWidth) {
+0000000|                        count = maxViewWidth - indent;
+       |                }
+       |
+0000000|                foreach(i; indent..indent+count) {
+0000000|                        if (c != 0) {
+0000000|                                putChar(i, c);
+       |                        }
+0000000|                        if (attr != 0) {
+0000000|                                putAttribute(i, cast(ubyte)attr);
+       |                        }
+       |                }
+       |        }
+       |
+       |/**[txh]********************************************************************
+       |
+       |  Description:
+       |  That's the same as moveStr but the attrs parameter holds two attributes
+       |the lower 8 bits are the normal value and the upper 8 bits define the
+       |attribute to be used for text enclosed by ASCII 126. @x{::moveStr}.@p
+       |  The routine was modified to avoid writes passing the end of the buffer.
+       |Additionally was re-writed in assembler (I guess the Borland's original code
+       |was assembler, but I didn't take a look to it) because the check slow downs
+       |the routine so I wanted to avoid a lose in performance. SET.
+       |
+       |***************************************************************************/
+       |        void moveCStr(S)( uint indent, in S src, uint attr ) {
+      3|                if (attrib != 0) {
+0000000|                        attr = attrib;
+       |                }
+      3|                ubyte bh = (attr >> 8) & 0xFF;
+      3|                ubyte ah = attr & 0xff;
+      3|                int len = min(maxViewWidth - indent, src.lenWithoutTides);
+       |
+      3|                S srcData = src.dup;
+      3|                int dstIndex = indent;
+     23|                while(len > 0) {
+     20|                        wchar al = cast(wchar)decodeFront(srcData);
+     20|                        if (al == '~') {
+      2|                                auto temp = ah;
+      2|                                ah = bh;
+      2|                                bh = temp;
+       |                        }
+       |                        else {
+     18|                                putChar(dstIndex, al);
+     18|                                putAttribute(dstIndex, ah);
+     18|                                dstIndex++;
+     18|                                --len;
+       |                        }
+       |                }
+       |        }
+       |
+       |        unittest {
+      1|                TDrawBuffer b;
+      1|                b.moveCStr(0, "~ê~tre\u03bb\u20AC", 0);
+      7|                auto bStr = map!(a => a.ch)(cast(CharInfo[])b.data[0..6]);
+      1|                assert(equal(bStr, "être\u03bb\u20AC"), to!string(bStr) ~ " != être\u03bb\u20AC");
+       |
+      1|                b.moveCStr(0, "être\u03bb\u20AC"w, 0);
+      1|                assertEquals(b, 6, "être\u03bb\u20AC");
+      1|                b.moveCStr(0, "être\u03bb\u20AC"d, 0);
+      1|                assertEquals(b, 6, "être\u03bb\u20AC");
+       |        }
+       |
+       |/**[txh]********************************************************************
+       |
+       |  Description:
+       |  Writes a string in the buffer with the provided attribute. The routine
+       |copies until the EOS is found or the buffer is filled.@p
+       |  Modified to avoid writes passing the end of the buffer. Optimized for
+       |32 bits. Translated to asm just for fun, I think is a little bit faster.
+       |SET.
+       |  The optional maxLen argument can be used to limit how many characters
+       |should be copied from the string.
+       |
+       |***************************************************************************/
+       |        
+       |        void moveStr(uint indent, in char[] str, uint attr, int maxLen = int.max) {
+0000000|                if (attrib != 0) {
+0000000|                        attr = attrib;
+       |                }
+0000000|                int endPos = indent + min(maxLen, min(maxViewWidth - indent, str.length));
+0000000|                CharInfo[] dest = data[indent..endPos];
+0000000|                int srcIndex = 0;
+0000000|                foreach(dstIndex; indent..endPos) {
+0000000|                        putChar(dstIndex, str[srcIndex++]);
+0000000|                        putAttribute(dstIndex, cast(ubyte)attr);
+       |                }
+       |        }
+       |}
+..\d\tdrawbuffer.d is 64% covered

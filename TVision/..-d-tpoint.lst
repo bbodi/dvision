@@ -1,0 +1,35 @@
+       |module tpoint;
+       |
+       |import configfile;
+       |
+       |struct TPoint {
+       |        int x, y;
+       |
+       |        TPoint opBinary(string op)(in ref TPoint rhs) const {
+0000000|                TPoint result;
+0000000|                mixin("result.x = this.x " ~ op ~ " rhs.x;");
+0000000|                mixin("result.y = this.y " ~ op ~ " rhs.y;");
+0000000|                return result;
+       |        }
+       |
+       |        void opOpAssign(string op)(in ref TPoint rhs) {
+0000000|                mixin("x " ~ op ~ "= rhs.x;");
+0000000|                mixin("y " ~ op ~ "= rhs.y;");
+       |        }
+       |
+       |        void deSerializeFrom(Elem* stream) {
+0000000|                x = stream.x.value!int;
+0000000|                y = stream.y.value!int;
+       |        }
+       |
+       |        void serializeTo(Elem* stream) const {
+0000000|                stream.x.set(x);
+0000000|                stream.y.set(y);
+       |        }
+       |
+       |        bool opEquals(in ref TPoint other) const {
+0000000|                return x == other.x && y == other.y;
+       |        }
+       |
+       |}
+..\d\tpoint.d is 0% covered

@@ -1,0 +1,282 @@
+       |module tscrollbar;
+       |
+       |import tview;
+       |import std.algorithm : max, min;
+       |
+       |alias wchar[5] TScrollChars;
+       |
+       |const ubyte[] cpScrollBar = cast(ubyte[])"\x04\x05\x05";
+       |
+       |private TScrollChars vChars = [0x25B2, 0x25BC, ' ', '*', ' ']; 
+       |private TScrollChars hChars = [0x2190, 0x2192, ' ', '*', ' '];
+       |
+       |// Constants for the scroll bar components
+       |private const int csbUp=0,
+       |          csbDown=1,
+       |          csbDark=2,
+       |          csbMark=3,
+       |          csbBright=4;
+       |
+       |private immutable TPalette palette = immutable(TPalette)(cpScrollBar);
+       |
+       |class TScrollBar : TView {
+       |
+       |        int value;
+       |
+       |    const TScrollChars chars;
+       |    int minVal;
+       |    int maxVal;
+       |    int pgStep;
+       |    int arStep;
+       |    TPoint mouse;
+       |        int p, s;
+       |        TRect extent;
+       |
+0000000|    this( in TRect bounds ) {
+0000000|                pgStep = 1;
+0000000|                arStep = 1;
+0000000|                super(bounds);
+0000000|            if( size.x == 1 ) {
+0000000|                growMode = gfGrowLoX | gfGrowHiX | gfGrowHiY;
+0000000|                chars = vChars;
+       |                } else {
+0000000|                growMode = gfGrowLoY | gfGrowHiX | gfGrowHiY;
+0000000|                chars = hChars;
+       |                }
+       |            // This class can be "Braille friendly"
+0000000|            if (TScreen.getShowCursorEver()) {
+0000000|               state |= sfCursorVis;
+       |                }
+       |        }
+       |
+       |        override void draw() {
+0000000|            drawPos(getPos());
+       |        }
+       |
+       |        void drawPos( int pos ) {
+0000000|            TDrawBuffer b;
+       |
+0000000|            int s = getSize() - 1;
+0000000|            b.moveChar( 0, chars[csbUp], getColor(2), 1 );
+0000000|            if( maxVal == minVal ) {
+0000000|                wchar unFilled = TScreen.avoidMoire ? TView.noMoireUnFill : chars[csbDark];
+0000000|                b.moveChar( 1, unFilled, getColor(1), s-1 );
+       |                } else {
+0000000|                        wchar filled  = TScreen.avoidMoire ? TView.noMoireFill   : chars[csbBright];
+0000000|                b.moveChar( 1, filled, getColor(1), s-1 );
+0000000|                b.moveChar( pos, chars[csbMark], getColor(3), 1 );
+0000000|                if( state & sfFocused ) { 
+0000000|                        setCursor( pos , 0 );
+0000000|                        resetCursor();
+       |                }
+       |            }
+       |
+0000000|            b.moveChar( s, chars[csbDown], getColor(2), 1 );
+0000000|            writeBuf( 0, 0, size.x, size.y, b );
+       |        }
+       |
+       |        override ref immutable(TPalette) getPalette() const {
+0000000|            return palette;
+       |        }
+       |
+       |        int getPos() {
+0000000|            int r = maxVal - minVal;
+0000000|            if( r == 0 ) {
+0000000|                        return 1;
+       |            } else {
+0000000|                        return  cast(int)(( ((cast(long)(value - minVal) * (getSize() - 3)) + (r >> 1)) / r) + 1);
+       |                }
+       |        }
+       |
+       |        int getSize() {
+0000000|            int s;
+       |
+0000000|            if( size.x == 1 )
+0000000|                        s = size.y;
+       |            else
+0000000|                        s = size.x;
+       |
+0000000|            return max( 3, s );
+       |        }
+       |
+       |        int getPartCode() {
+0000000|            int part= - 1;
+0000000|            if( extent.contains(mouse) ) {
+0000000|                        int mark = (size.x == 1) ? mouse.y : mouse.x;
+       |
+0000000|                        if (mark == p)
+0000000|                            part = sbIndicator;
+       |                        else {
+0000000|                            if( mark < 1 )
+0000000|                                        part = sbLeftArrow;
+0000000|                            else if( mark < p )
+0000000|                                        part= sbPageLeft;
+0000000|                            else if( mark < s )
+0000000|                                        part= sbPageRight;
+       |                            else
+0000000|                                        part= sbRightArrow;
+       |
+0000000|                            if ( size.x == 1 )
+0000000|                                        part += 4;
+       |                        }
+       |                }
+0000000|            return part;
+       |        }
+       |
+       |        override void handleEvent( ref TEvent event ) {
+0000000|            bool Tracking;
+0000000|            int i=0, clickPart;
+       |
+0000000|            TView.handleEvent(event);
+0000000|            switch( event.what ) {
+0000000|                        case evMouseDown:
+0000000|                            message(owner, evBroadcast, cm.ScrollBarClicked,this); // Clicked()
+0000000|                            mouse = makeLocal( event.mouse.where );
+0000000|                            extent = getExtent();
+0000000|                            extent.grow(1, 1);
+0000000|                            p = getPos();
+0000000|                            s = getSize() - 1;
+0000000|                            clickPart = getPartCode();
+0000000|                            if( clickPart != sbIndicator ) {
+       |                                        do  {
+0000000|                                        mouse = makeLocal( event.mouse.where );
+0000000|                                        if( getPartCode() == clickPart )
+0000000|                                                        setValue(value + scrollStep(clickPart) );
+0000000|                                    } while( mouseEvent(event, evMouseAuto) );
+       |                                } else {
+       |                                        do  {
+0000000|                                                mouse = makeLocal( event.mouse.where );
+0000000|                                                Tracking = extent.contains(mouse);
+0000000|                                                if( Tracking ) {
+0000000|                                                        if( size.x == 1 )
+0000000|                                        i = mouse.y;
+       |                                    else
+0000000|                                        i = mouse.x;
+0000000|                                    i = max( i, 1 );
+0000000|                                    i = min( i, s-1 );
+       |                                } else {
+0000000|                                                        i = getPos();
+       |                                                }
+0000000|                                                if(i != p ) {
+0000000|                                                        drawPos(i);
+0000000|                                                        p = i;
+       |                                                }
+0000000|                                        } while( mouseEvent(event,evMouseMove) );
+0000000|                                        if( Tracking && s > 2 ) {
+0000000|                                                s -= 2;
+0000000|                                                setValue( cast(int)(((cast(long)(p - 1) * (maxVal - minVal) + (s >> 1)) / s) + minVal));
+       |                                        }
+       |                                }
+0000000|                        clearEvent(event);
+0000000|                        break;
+0000000|                case  evKeyDown:
+0000000|                    if( (state & sfVisible) != 0 ) {
+0000000|                        clickPart = sbIndicator;
+0000000|                        if( size.y == 1 ) {
+0000000|                            switch( ctrlToArrow(event.keyDown.keyCode) ) {
+0000000|                                case KeyCode.kbLeft:
+0000000|                                    clickPart = sbLeftArrow;
+0000000|                                    break;
+0000000|                                case KeyCode.kbRight:
+0000000|                                    clickPart = sbRightArrow;
+0000000|                                    break;
+0000000|                                case KeyCode.kbCtrlLeft:
+0000000|                                    clickPart = sbPageLeft;
+0000000|                                    break;
+0000000|                                case KeyCode.kbCtrlRight:
+0000000|                                    clickPart = sbPageRight;
+0000000|                                    break;
+0000000|                                case KeyCode.kbHome:
+0000000|                                    i = minVal;
+0000000|                                    break;
+0000000|                                case KeyCode.kbEnd:
+0000000|                                    i = maxVal;
+0000000|                                    break;
+0000000|                                default:
+0000000|                                    return;
+       |                                }
+       |                        } else {
+0000000|                            switch( ctrlToArrow(event.keyDown.keyCode) ) {
+0000000|                                case KeyCode.kbUp:
+0000000|                                    clickPart = sbUpArrow;
+0000000|                                    break;
+0000000|                                case KeyCode.kbDown:
+0000000|                                    clickPart = sbDownArrow;
+0000000|                                    break;
+0000000|                                case KeyCode.kbPgUp:
+0000000|                                    clickPart = sbPageUp;
+0000000|                                    break;
+0000000|                                case KeyCode.kbPgDn:
+0000000|                                    clickPart = sbPageDown;
+0000000|                                    break;
+0000000|                                case KeyCode.kbCtrlPgUp:
+0000000|                                    i = minVal;
+0000000|                                    break;
+0000000|                                case KeyCode.kbCtrlPgDn:
+0000000|                                    i = maxVal;
+0000000|                                    break;
+0000000|                                default:
+0000000|                                    return;
+       |                                                }
+       |                                        }
+0000000|                        message(owner,evBroadcast,cm.ScrollBarClicked,this); // Clicked
+0000000|                        if( clickPart != sbIndicator )
+0000000|                            i = value + scrollStep(clickPart);
+0000000|                        setValue(i);
+0000000|                        clearEvent(event);
+       |                                }
+0000000|                                goto default;
+0000000|                default: 
+0000000|                break;
+       |                }
+       |        }
+       |
+       |        void scrollDraw() {
+0000000|            message(owner, evBroadcast, cm.ScrollBarChanged,this);
+       |        }
+       |
+       |        int scrollStep( int part ) {
+0000000|            int  step;
+       |
+0000000|            if( !(part & 2) )
+0000000|                step = arStep;
+       |            else
+0000000|                step = pgStep;
+0000000|            if( !(part & 1) )
+0000000|                return -step;
+       |            else
+0000000|                return step;
+       |        }
+       |
+       |        void setParams( int aValue, int aMin, int aMax, int aPgStep, int aArStep ) {
+0000000|            int  sValue;
+       |
+0000000|            aMax = max( aMax, aMin );
+0000000|            aValue = max( aMin, aValue );
+0000000|            aValue = min( aMax, aValue );
+0000000|            sValue = value;
+0000000|            if( sValue != aValue || minVal != aMin || maxVal != aMax ) {
+0000000|                value = aValue;
+0000000|                minVal = aMin;
+0000000|                maxVal = aMax;
+0000000|                drawView();
+0000000|                if( sValue != aValue )
+0000000|                    scrollDraw();
+       |                }
+0000000|            pgStep = aPgStep;
+0000000|            arStep = aArStep;
+       |        }
+       |
+       |        void setRange( int aMin, int aMax ) {
+0000000|            setParams( value, aMin, aMax, pgStep, arStep );
+       |        }
+       |
+       |        void setStep( int aPgStep, int aArStep ) {
+0000000|            setParams( value, minVal, maxVal, aPgStep, aArStep );
+       |        }
+       |
+       |        void setValue( int aValue ) {
+0000000|            setParams( aValue, minVal, maxVal, pgStep, arStep );
+       |        }
+       |}
+..\tscrollbar.d is 0% covered

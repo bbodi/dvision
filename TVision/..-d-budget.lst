@@ -1,0 +1,151 @@
+       |module budget;
+       |
+       |import std.datetime;
+       |import std.math;
+       |import std.stdio;
+       |import std.algorithm;
+       |
+       |struct Category {
+       |        string name;
+       |        Category[] children;
+       |}
+       |
+       |struct Persely {
+       |        string name;
+       |}
+       |
+       |struct CategoryMoney {
+       |        Category* category;
+       |        double amount;
+       |}
+       |
+       |struct Saving {
+       |        Category* category;
+       |        double neededAmount;
+       |        double collectedAmount;
+       |}
+       |
+       |struct LekotesTime {
+       |        int months;
+       |}
+       |
+       |@property LekotesTime year(in double time) {
+      2|        return LekotesTime(cast(int)(time * 12 + 0.5));
+       |}
+       |
+       |@property LekotesTime month(in int time) {
+      2|        return LekotesTime(time);
+       |}
+       |
+       |unittest {
+      1|        auto t = 10.5.year;
+      1|        assert(t.months == 126);
+       |
+      1|        t = 10.month;
+      1|        assert(t.months == 10);
+       |}
+       |
+       |struct Lekotes {
+       |        double amount;
+       |        double yearInterest;
+       |        LekotesTime lekotesTime;
+       |        Persely* persely;
+       |
+       |        double amountAfter(in LekotesTime time) {
+      1|                double monthInterest = (yearInterest / 12.0) / 100.0;
+      1|                double sum = amount;
+     39|                foreach(month; 0..time.months) {
+     12|                        double interest = sum * monthInterest;
+     12|                        sum += interest;
+     12|                        writeln(sum);
+       |                }
+      1|                return sum;
+       |        }
+       |}
+       |
+       |unittest {
+      1|        Lekotes lekotes = {100, 6.5, 1.year};
+      1|        double sum = lekotes.amountAfter(12.month);
+      1|        writeln(100*1.065, ", ", sum);
+      1|        assert(sum.approxEqual(100*1.065));
+       |}
+       |
+       |struct Transaction {
+       |        double amount;
+       |        string memo;
+       |        Category category;
+       |        Persely persely;
+       |        Date date;
+       |}
+       |
+       |struct Transactions {
+       |        private const(Transaction)[] transactions;
+       |        private const(Transaction)[][const(Persely)] perselyTransactions;
+       |        private const(Transaction)[][const(Category)] categoryTransactions;
+       |        //Transaction[Saving] perselyTransactions;
+       |
+       |        const(Transaction)[] opSlice() const {
+      4|                return transactions;
+       |        }
+       |
+       |        const(Transaction)[] opIndex(in Persely p) const {
+      3|                auto retPtr = p in perselyTransactions;
+      6|                return retPtr ? *retPtr : [];
+       |        }
+       |
+       |        const(Transaction)[] opIndex(in Category c) const {
+      4|                auto retPtr = c in categoryTransactions;
+      8|                return retPtr ? *retPtr : [];
+       |        }
+       |
+       |        void add(in Transaction tx) {
+      1|                transactions ~= tx;
+      1|                perselyTransactions[tx.persely] ~= tx;
+      1|                categoryTransactions[tx.category] ~= tx;
+       |        }
+       |}
+       |
+       |struct User {
+       |        Persely[] perselyek;
+       |        Category[] categories;
+       |        Saving[] savings;
+       |        Lekotes[] lekotesek;
+       |        Transactions transactions;
+       |
+       |        invariant() {
+      9|                foreach(ref tx; transactions[]) {
+      1|                        assert(transactions[tx.persely].count(tx) == 1);
+      1|                        assert(transactions[tx.category].count(tx) == 1);
+       |                }
+     12|                foreach(persely; perselyek) {
+      9|                        foreach(tx; transactions[persely]) {
+      1|                                assert(transactions[].count(tx) == 1);
+       |                        }
+       |                }
+     12|                foreach(cat; categories) {
+      9|                        foreach(tx; transactions[cat]) {
+      1|                                assert(transactions[].count(tx) == 1);
+       |                        }
+       |                }
+       |        }
+       |
+       |        void addTransaction(in Transaction tx) {
+      1|                transactions.add(tx);
+       |        }
+       |}
+       |
+       |unittest {
+      1|        Category cat = Category("TestCategory");
+      1|        Persely persely = Persely("Malac");
+      1|        User user = User([persely], [cat]);
+      1|        auto tx = Transaction(100, "teszt", cat, persely);
+      1|        user.addTransaction(tx);
+      1|        assert(user.transactions[cat].length == 1);
+       |}
+       |
+       |
+       |/*
+       |void main() {
+       |        writeln("OK");
+       |}*/
+..\d\budget.d is 100% covered

@@ -1,0 +1,593 @@
+       |module tgroup;
+       |
+       |import tview;
+       |import trect;
+       |import tevent;
+       |
+       |TView TheTopView;
+       |
+       |static bool hasMouse( TView p, void *s ) {
+0000000|        return p.containsMouse( *cast(TEvent *)s );
+       |}
+       |
+       |static private int force_redraw = 0;
+       |
+       |class TGroup : TView {
+       |
+       |        TView last, current;
+       |        
+       |        TRect clip;
+       |        phaseType phase;
+       |        
+       |        CharInfo[] buffer;
+       |        ubyte lockFlag;
+       |        Command endState;
+       |
+       |        
+0000000|        this( in TRect bounds ) {
+0000000|                super(bounds);
+0000000|                current = last = null;
+0000000|                phase = phaseType.phFocused;
+0000000|                buffer = null;
+0000000|                lockFlag = 0;
+0000000|                endState = cm.Null;
+0000000|                options |= ofSelectable | ofBuffered;
+0000000|                clip = getExtent();
+0000000|                eventMask = 0xFFFF;
+       |        }
+       |
+       |        TView first() {
+0000000|                if( last is null )
+0000000|                        return null;
+       |                else
+0000000|                        return last.next;
+       |        }
+       |
+       |        bool canShowCursor() {
+0000000|                if (buffer) {
+0000000|                        if (owner) {
+0000000|                                return owner.canShowCursor();
+       |                        }
+0000000|                        return false;
+       |                }
+0000000|                return lockFlag ? false : true;
+       |        }
+       |
+       |        override void setData(void* ptr) {
+0000000|                uint fieldOffset = 0;
+0000000|                if( last !is null ) {
+0000000|                        TView v = last;
+       |                        do  {
+0000000|                                v.setData( cast(byte *)ptr + fieldOffset );
+0000000|                                fieldOffset += v.dataSize();
+0000000|                                v = v.prev();
+0000000|                        } while (v !is last);
+       |                }
+       |        }
+       |
+       |        private static void doExpose( TView p, void *enable )
+       |        {
+0000000|                if( (p.state & sfVisible) != 0 )
+0000000|                        p.setState( sfExposed, *cast(bool *)enable );
+       |        }
+       |
+       |        struct setBlock
+       |        {
+       |                ushort st;
+       |                bool en;
+       |        };
+       |        
+       |        static void doSetState( TView p, void *b )
+       |        {
+0000000|                p.setState( (cast(setBlock *)b).st, (cast(setBlock *)b).en );
+       |        }
+       |        
+       |        override void setState( ushort aState, bool enable ) {
+0000000|                setBlock sb;
+0000000|                sb.st = aState;
+0000000|                sb.en = enable;
+       |                
+0000000|                TView.setState( aState, enable );
+       |                
+0000000|                if( (aState & (sfActive | sfDragging)) != 0 ) { 
+0000000|                        lock();
+0000000|                        forEach( &doSetState, &sb );
+0000000|                        unlock();
+       |                }
+       |                
+0000000|                if( (aState & sfFocused) != 0 ) {
+0000000|                        if( current !is null )
+0000000|                                current.setState( sfFocused, enable );
+       |                }
+       |                
+0000000|                if( (aState & sfExposed) != 0 ) {
+0000000|                        forEach( &doExpose, &enable );
+0000000|                        if( enable == false )
+0000000|                                freeBuffer();
+       |                }
+       |        }
+       |
+       |        void setCurrent( TView p, selectMode mode ) {
+0000000|                if (current !is p) {
+0000000|                        lock();
+0000000|                        focusView( current, false );
+       |                        // Test if focus lost was allowed and focus has really been loose
+0000000|                        if ( (mode == selectMode.normalSelect) && (current !is null) && (current.state & sfFocused)) {
+0000000|                                unlock(); 
+0000000|                                return; 
+       |                        }
+0000000|                        if( mode != selectMode.enterSelect ) {
+0000000|                                if( current !is null ) {
+0000000|                                        current.setState( sfSelected, false );
+       |                                }
+       |                        }
+0000000|                        if( mode != selectMode.leaveSelect ) {
+0000000|                                if( p !is null ) {
+0000000|                                        p.setState( sfSelected, true );
+       |                                }
+       |                        }
+0000000|                        focusView( p, true );
+0000000|                        current = p;
+0000000|                        unlock();
+       |                }
+       |        }
+       |
+       |        void unlock() {
+0000000|                if( lockFlag != 0 && --lockFlag == 0 ) {
+0000000|                        drawView();
+       |                        // SET: Now is time to hide/show mouse according to
+       |                        // changes while we were locked.
+0000000|                        resetCursor();
+       |                }
+       |        }
+       |
+       |        override void resetCursor() {
+0000000|                if( current !is null ) {
+0000000|                        current.resetCursor();
+       |                }
+       |        }
+       |        
+       |        override bool valid( Command command ) {
+0000000|                return  firstThat( (p, commandP) => !p.valid( *cast(Command *)commandP ), &command ) is null ;
+       |        }
+       |
+       |        void focusView( TView p, bool enable ) {
+0000000|                if( (state & sfFocused) != 0 && p !is null )
+0000000|                        p.setState( sfFocused, enable );
+       |        }
+       |
+       |        override int getHelpCtx() const {
+0000000|                int h = hcNoContext;
+0000000|                if( current !is null )
+0000000|                        h = current.getHelpCtx();
+0000000|                if (h == hcNoContext)
+0000000|                        h = TView.getHelpCtx();
+0000000|                return h;
+       |        }
+       |
+       |        void resetCurrent() {
+0000000|                setCurrent( firstMatch( sfVisible, ofSelectable ), selectMode.normalSelect );
+       |        }
+       |
+       |        void lock() {
+0000000|                if( buffer !is null || lockFlag != 0 ) {
+0000000|                        lockFlag++;
+       |                }
+       |        }
+       |
+       |        TView firstMatch( ushort aState, ushort aOptions ) {
+0000000|                if( last is null )
+0000000|                        return null;
+       |                
+0000000|                TView temp = last;
+0000000|                while(1) {
+0000000|                        if( ((temp.state & aState) == aState) && 
+0000000|                           ((temp.options & aOptions) ==  aOptions))
+0000000|                                return temp;
+       |                        
+0000000|                        temp = temp.next;
+0000000|                        if( temp == last )
+0000000|                                return null;
+       |                }
+       |        }
+       |
+       |        override void getData(void *rec) {
+0000000|                uint i = 0;
+0000000|                if (last !is null )
+       |                {
+0000000|                        TView v = last;
+       |                        do  {
+0000000|                                v.getData( (cast(char *)rec) + i );
+0000000|                                i += v.dataSize();
+0000000|                                v = v.prev();
+0000000|                        } while( v !is last );
+       |                }
+       |        }
+       |
+       |        override void draw()
+       |        {
+       |                /* I have changed it now to force a redraw of all subviews
+       |   instead of redrawing from the buffer, when the flag
+       |   'force_redraw' is set. This flag is set by the new member
+       |   function 'Redraw' which should be called, when the app wants
+       |   a forced redraw of all subviews.
+       |*/
+0000000|                if (buffer !is null) {
+0000000|                        if (force_redraw)
+       |                        {
+0000000|                                lockFlag++;
+0000000|                                redraw();
+0000000|                                lockFlag--;
+       |                        }
+0000000|                        writeNativeBuf( 0, 0, size.x, size.y, buffer );
+       |                } else {
+0000000|                        getBuffer();
+0000000|                        if (buffer !is null) {
+0000000|                                lockFlag++;
+0000000|                                redraw();
+0000000|                                lockFlag--;
+0000000|                                writeNativeBuf( 0, 0, size.x, size.y, buffer );
+       |                        } else {
+0000000|                                clip = getClipRect();
+0000000|                                redraw();
+0000000|                                clip = getExtent();
+       |                        }
+       |                }
+       |        }
+       |
+       |        void drawSubViews( TView p, TView bottom ) {
+0000000|                while( p !is bottom ) {
+0000000|                        p.drawView();
+0000000|                        p = p.nextView();
+       |                }
+       |        }
+       |
+       |        void removeView(TView p) {
+0000000|                TView akt, view;
+0000000|                if (!last) return;
+0000000|                view = last;
+0000000|                akt = view.next;
+0000000|                while ((akt !is p) && (akt !is last))
+       |                {
+0000000|                        view = akt;
+0000000|                        akt = view.next;
+       |                }
+0000000|                if (akt is p)
+       |                {
+0000000|                        akt = p.next;
+0000000|                        view.next = akt;
+0000000|                        if (last !is p) return;
+0000000|                        if (akt is p) view = null;
+0000000|                        last = view;
+0000000|                        return;
+       |                }
+0000000|                if (akt is last) return;
+       |        }
+       |
+       |        void remove(TView p) {
+0000000|                ushort saveState;
+0000000|                saveState = p.state;
+0000000|                p.hide();
+0000000|                removeView(p);
+0000000|                p.owner = null;
+0000000|                p.next= null;
+0000000|                if( (saveState & sfVisible) != 0 )
+0000000|                        p.show();
+       |        }
+       |
+       |        void eventError( in ref TEvent event ) {
+0000000|                if (owner !is null ) {
+0000000|                        owner.eventError( event );
+       |                }
+       |        }
+       |
+       |        override Command execute() {
+       |                do {
+0000000|                        endState = cm.Null;
+0000000|                        TEvent e;
+       |                        do  {
+0000000|                                getEvent( e );
+0000000|                                handleEvent( e );
+0000000|                                if( e.what != evNothing )
+0000000|                                        eventError( e );
+0000000|                        } while( endState == cm.Null );
+0000000|                } while( !valid(endState) );
+0000000|                return endState;
+       |        }
+       |
+       |        struct handleStruct {
+       |                TEvent *event;
+       |                TGroup grp;
+       |        };
+       |
+       |        override void handleEvent( ref TEvent event ) {
+0000000|                TView.handleEvent( event );
+       |                
+0000000|                handleStruct hs = handleStruct( &event, this );
+       |                
+0000000|                if( (event.what & focusedEvents) != 0 ) {
+0000000|                        phase = phaseType.phPreProcess;
+0000000|                        forEach( &doHandleEvent, &hs );
+       |                        
+0000000|                        phase = phaseType.phFocused;
+0000000|                        doHandleEvent( current, &hs );
+       |                        
+0000000|                        phase = phaseType.phPostProcess;
+0000000|                        forEach( &doHandleEvent, &hs );
+       |                }
+       |                else {
+0000000|                        phase = phaseType.phFocused;
+0000000|                        bool positionalEvent = (event.what & positionalEvents) != 0;
+0000000|                        if( positionalEvent ) {
+0000000|                                doHandleEvent( firstThat( (p, s) => p.containsMouse( *cast(TEvent *)s ), &event ), &hs );
+       |                        }
+       |                        else {
+0000000|                                forEach( &doHandleEvent, &hs );
+       |                        }
+       |                }
+       |        }
+       |
+       |        private static void doHandleEvent( TView p, void *s ) {
+0000000|                handleStruct *ptr = cast(handleStruct *)s;
+0000000|                bool positionalEvent = (ptr.event.what & positionalEvents) != 0;
+0000000|                bool focusedEvent = (ptr.event.what & focusedEvents) != 0;
+0000000|                if( p is null ||
+0000000|                   ( (p.state & sfDisabled) != 0 &&
+0000000|                 (positionalEvent || focusedEvent)
+       |                 )
+       |                   )
+0000000|                        return;
+       |                
+0000000|                switch( ptr.grp.phase ) {
+0000000|                        case phaseType.phPreProcess:
+0000000|                                if( (p.options & ofPreProcess) == 0 )
+0000000|                                        return;
+0000000|                                break;
+0000000|                        case phaseType.phPostProcess:
+0000000|                                if( (p.options & ofPostProcess) == 0 )
+0000000|                                        return;
+0000000|                                break;
+0000000|                        default:
+0000000|                                break;
+       |                }
+0000000|                if( (ptr.event.what & p.eventMask) != 0 )
+0000000|                        p.handleEvent( *ptr.event );
+       |        }
+       |
+       |        void insert( TView p ) {
+0000000|                insertBefore( p, first() );
+       |        }
+       |
+       |
+       |        void insertBefore( TView newView, TView Target ) {
+0000000|                if( newView !is null && newView.owner is null && (Target is null || Target.owner is this) ) {
+0000000|                        if( (newView.options & ofCenterX) != 0 )
+0000000|                                newView.origin.x = (size.x - newView.size.x)/2;
+0000000|                        if( (newView.options & ofCenterY) != 0 )
+0000000|                                newView.origin.y = (size.y - newView.size.y)/2;
+0000000|                        ushort saveState = newView.state;
+0000000|                        newView.hide();
+0000000|                        insertView(newView, Target);
+0000000|                        if( (saveState & sfVisible) != 0 ) {
+0000000|                                newView.show();
+       |                        }
+       |                }
+       |        }
+       |        
+       |        void insertView( TView newView, TView Target ) {
+0000000|                newView.owner = this;
+0000000|                if( Target !is null ) {
+0000000|                        Target = Target.prev();
+0000000|                        newView.next = Target.next;
+0000000|                        Target.next = newView;
+       |                } else {
+0000000|                        if( last is null) {
+0000000|                                newView.next = newView;
+       |                        } else {
+0000000|                                newView.next = last.next;
+0000000|                                last.next = newView;
+       |                        }
+0000000|                        last = newView;
+       |                }
+       |        }
+       |
+       |        TView firstThat( bool function(TView , void *) func, void *args ) {
+0000000|                TView temp = last;
+0000000|                if( temp is null )
+0000000|                        return null;
+       |                
+       |                do  {
+0000000|                        temp = temp.next;
+0000000|                        if( func( temp, args ) == true )
+0000000|                                return temp;
+0000000|                } while( temp !is last );
+0000000|                return null;
+       |        }
+       |
+       |        void CLY_Redraw() {
+0000000|                force_redraw++;
+0000000|                redraw();
+0000000|                force_redraw--;
+       |        }
+       |
+       |        void redraw() {
+0000000|                drawSubViews( first(), null );
+       |        }
+       |
+       |        void forEach( void function(TView, void *) func, void *args ) {
+0000000|                TView term = last;
+0000000|                TView temp = last;
+0000000|                if( temp is null )
+0000000|                        return;
+       |                
+0000000|                TView next = temp.next;
+       |                do  {
+0000000|                        temp = next;
+0000000|                        next = temp.next;
+0000000|                        func( temp, args );
+0000000|                } while( temp !is term );
+       |        }
+       |
+       |        short indexOf( TView p ) {
+0000000|                if( last is null )
+0000000|                        return 0;
+       |                
+0000000|                short index = 0;
+0000000|                TView temp = last;
+       |                do  {
+0000000|                        index++;
+0000000|                        temp = temp.next;
+0000000|                } while( temp !is p && temp !is last );
+0000000|                if( temp !is p )
+0000000|                        return 0;
+       |                else
+0000000|                        return index;
+       |        }
+       |
+       |        TView at( short index ) {
+0000000|                TView temp = last;
+0000000|                while( index-- > 0 )
+0000000|                        temp = temp.next;
+0000000|                return temp;
+       |        }
+       |
+       |        void selectNext( bool forwards ) {
+0000000|                if( current !is null ) {
+0000000|                        TView p = current;
+       |                        do  {
+0000000|                                if (forwards)
+0000000|                                        p = p.next;
+       |                                else
+0000000|                                        p = p.prev();
+0000000|                        } while ( !(
+       |                                (((p.state & (sfVisible + sfDisabled)) == sfVisible) &&
+0000000|                         (p.options & ofSelectable)) || (p is current)
+       |                                ) );
+0000000|                        p.select();
+       |                }
+       |        }
+       |
+       |        void selectView( TView p, bool enable ) {
+0000000|                if( p !is null)
+0000000|                        p.setState( sfSelected, enable );
+       |        }
+       |
+       |        Command execView( TView p ) {
+0000000|                if( p is null )
+0000000|                        return cm.Cancel;
+       |                
+0000000|                ushort saveOptions = p.options;
+0000000|                TGroup saveOwner = p.owner;
+0000000|                TView saveTopView = TheTopView;
+0000000|                TView saveCurrent= current;
+0000000|                TCommandSet saveCommands;
+0000000|                getCommands( saveCommands );
+0000000|                TheTopView = p;
+0000000|                p.options = p.options & ~ofSelectable;
+0000000|                p.setState(sfModal, true);
+0000000|                setCurrent(p, selectMode.enterSelect);
+0000000|                if( saveOwner is null )
+0000000|                        insert(p);
+       |                
+       |                // Just be foolproof
+0000000|                int oldLock=lockFlag;
+0000000|                if (lockFlag)
+       |                {
+0000000|                        lockFlag=1; unlock();
+       |                }
+       |                
+0000000|                Command retval = p.execute();
+0000000|                p.setState(sfActive, false);
+       |                
+       |                // Re-lock if needed
+0000000|                lockFlag = cast(ubyte)oldLock;
+       |                
+0000000|                if( saveOwner is null )
+0000000|                        remove(p);
+0000000|                setCurrent(saveCurrent, selectMode.leaveSelect);
+0000000|                p.setState(sfModal, false);
+0000000|                p.options = saveOptions;
+0000000|                TheTopView = saveTopView;
+0000000|                setCommands(saveCommands);
+0000000|                return retval;
+       |        }
+       |
+       |        override void shutDown() {
+       |                // Avoid problems if a hidden or unselectable TView was forced to be
+       |                // selected. Marek Bojarski <bojarski@if.uj.edu.pl>
+0000000|                resetCurrent();
+0000000|                TView p = last;
+0000000|                if( p !is null )
+       |                do  {
+0000000|                        TView T = p.prev();
+0000000|                        CLY_destroy( p );
+0000000|                        p = T;
+0000000|                } while( last !is null );
+0000000|                freeBuffer();
+0000000|                current = null;
+0000000|                TView.shutDown();
+       |        }
+       |
+       |        void freeBuffer() {
+0000000|                if( (options & ofBuffered) != 0 && buffer !is null )
+       |                {
+       |                        //DeleteArray(buffer);
+0000000|                        buffer = null;
+       |                }
+       |        }
+       |
+       |        private static void doCalcChange( TView p, void *d ) {
+0000000|                TRect  r;
+0000000|                p.calcBounds(r, *cast(TPoint*)d);
+0000000|                p.changeBounds(r);
+       |        }
+       |
+       |        override void changeBounds( in TRect bounds ) {
+0000000|                TPoint d;
+       |                
+0000000|                d.x = (bounds.b.x - bounds.a.x) - size.x;
+0000000|                d.y = (bounds.b.y - bounds.a.y) - size.y;
+0000000|                if( d.x == 0 && d.y == 0 )
+       |                {
+0000000|                        setBounds(bounds);
+0000000|                        drawView();
+       |                }
+       |                else
+       |                {
+0000000|                        freeBuffer();
+0000000|                        setBounds( bounds );
+0000000|                        clip = getExtent();
+0000000|                        getBuffer();
+0000000|                        lock();
+0000000|                        forEach( &doCalcChange, &d );
+0000000|                        unlock();
+       |                }
+       |        }
+       |
+       |        void getBuffer() {
+0000000|                if( (state & sfExposed) != 0 ) {
+0000000|                        if( (options & ofBuffered) != 0 && (buffer is null)) {
+0000000|                                buffer = new CharInfo[size.x * size.y];
+       |                        }
+       |                }
+       |        }
+       |
+       |        private static void addSubviewDataSize( TView p, void *T ) {
+0000000|                *(cast(uint *)T) += (cast(TGroup )p).dataSize();
+       |        }
+       |        
+       |        override uint dataSize() {
+0000000|                uint T = 0;
+0000000|                forEach( &addSubviewDataSize, &T );
+0000000|                return T;
+       |        }
+       |
+       |        override void endModal( Command command ) {
+0000000|                if( (state & sfModal) != 0 )
+0000000|                        endState = command;
+       |                else
+0000000|                        TView.endModal( command );
+       |        }
+       |
+       |}
+..\d\tgroup.d is 0% covered

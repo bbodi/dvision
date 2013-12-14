@@ -1,0 +1,112 @@
+       |module win32.win32mouse;
+       |
+       |import core.sys.windows.windows;
+       |
+       |import tevent;
+       |import teventqueue;
+       |import win32.win32key;
+       |import win32.win32scr;
+       |
+       |private static const eventMouseQSize = 300;
+       |
+       |__gshared CRITICAL_SECTION lockMouse;
+       |__gshared MouseEventType *evMouseIn;
+       |__gshared MouseEventType *evLastMouseIn;
+       |__gshared MouseEventType *evMouseOut;
+       |__gshared MouseEventType evMouseQueue[eventMouseQSize];
+       |__gshared uint evMouseLength;
+       |
+       |struct THWMouseWin32 {
+       |
+       |        static void Init() {
+0000000|                THWMouse.GetEvent = &THWMouseWin32.GetEvent;
+0000000|                THWMouse.Resume = &THWMouseWin32.Resume;
+0000000|                InitializeCriticalSection(&lockMouse);
+0000000|                evMouseLength = 0;
+0000000|                evMouseIn = evMouseOut=&evMouseQueue[0];
+0000000|                Resume();
+       |        }
+       |        
+       |        static void Resume() {
+       |                // SET: This is supposed to report if mouse is present and how many buttons
+       |                // have. I put a detailed comment in winnt driver.
+0000000|                THWMouse.buttonCount = cast(ubyte)GetSystemMetrics(SM_CMOUSEBUTTONS);
+       |        }
+       |        
+       |        static void DeInit()
+       |        {
+0000000|                DeleteCriticalSection(&lockMouse);
+       |        }
+       |        
+       |        static void putConsoleMouseEvent(ref MouseEventType mouse)
+       |        {
+0000000|                EnterCriticalSection(&lockMouse);
+0000000|                if (evMouseLength<eventMouseQSize)
+       |                {// Compress mouse events
+0000000|                        if (evLastMouseIn && evMouseLength && (evLastMouseIn.buttons==mouse.buttons))
+0000000|                                *evLastMouseIn=mouse;
+       |                        else
+       |                        {
+0000000|                                evMouseLength++;
+0000000|                                *evMouseIn=mouse;
+0000000|                                evLastMouseIn=evMouseIn;
+0000000|                                if (++evMouseIn >= (evMouseQueue.ptr+eventMouseQSize))
+0000000|                                        evMouseIn=&evMouseQueue[0];
+       |                        }
+       |                }
+0000000|                LeaveCriticalSection(&lockMouse);
+       |        }
+       |        
+       |        static void GetEvent(ref MouseEventType me) {
+0000000|                EnterCriticalSection(&lockMouse);
+0000000|                int hasmouseevent=evMouseLength>0;
+0000000|                if (hasmouseevent) {
+0000000|                        evMouseLength--;
+0000000|                        me = *evMouseOut;
+0000000|                        if (++evMouseOut >= (evMouseQueue.ptr+eventMouseQSize))
+0000000|                                evMouseOut=&evMouseQueue[0];
+       |                }
+       |                else {
+       |                        // If no event is available use the last values so TV reports no changes
+0000000|                        me=TEventQueue.curMouse;
+       |                }
+0000000|                LeaveCriticalSection(&lockMouse);
+       |        }
+       |        
+       |        static void HandleMouseEvent() {
+0000000|                INPUT_RECORD ir;
+0000000|                DWORD dwRead;
+0000000|                ReadConsoleInputA(hIn,&ir,1,&dwRead);
+0000000|                if ((dwRead==1) && (ir.EventType==MOUSE_EVENT)) {
+0000000|                        MouseEventType mouse;
+0000000|                        mouse.where.x = ir.MouseEvent.dwMousePosition.X;
+0000000|                        mouse.where.y = ir.MouseEvent.dwMousePosition.Y;
+0000000|                        mouse.buttons = 0;
+0000000|                        mouse.doubleClick = false;
+0000000|                        if (ir.MouseEvent.dwButtonState & FROM_LEFT_1ST_BUTTON_PRESSED) {
+0000000|                                mouse.buttons |= mbLeftButton;
+       |                        }
+0000000|                        if (ir.MouseEvent.dwButtonState & RIGHTMOST_BUTTON_PRESSED) {
+0000000|                                mouse.buttons |= mbRightButton;
+       |                        }
+0000000|                        if (ir.MouseEvent.dwButtonState & FROM_LEFT_2ND_BUTTON_PRESSED) {
+0000000|                                mouse.buttons |= mbMiddleButton;
+       |                        }
+0000000|                        const MOUSE_WHEELED = 0x004;
+0000000|                        if (ir.MouseEvent.dwEventFlags & MOUSE_WHEELED) {
+0000000|                                short deltaWheel = (ir.MouseEvent.dwButtonState >> 16) & 0xFFFF;
+0000000|                                if (deltaWheel > 0) {
+0000000|                                        mouse.buttons |= mbButton4;
+       |                                } else {
+0000000|                                        mouse.buttons |= mbButton5;
+       |                                }
+       |                                
+       |                        }
+0000000|                        putConsoleMouseEvent(mouse);
+0000000|                        TGKeyWin32.ProcessControlKeyState(&ir);
+       |                }
+       |        }
+       |
+       |}
+       |
+..\d\win32\win32mouse.d is 0% covered

@@ -1,0 +1,33 @@
+       |module tpalette;
+       |
+       |struct TPalette {
+       |        ubyte[] data;
+       |
+      1|    this( in ubyte[] d ) immutable {
+      1|                if (d is null) {
+0000000|                        data = [0];
+       |                } else {
+      1|                        data = ([cast(ubyte)d.length] ~ d).idup;
+       |                }
+       |        }
+       |
+       |        unittest {
+      1|                ubyte[] array = [1, 2, 3, 4];
+      1|                immutable TPalette pal = immutable(TPalette)(array);
+      1|                assert(pal.data !is null);
+      1|                assert(pal.data.length == 5);
+      1|                assert(pal.data[0] == 4);
+      1|                assert(pal.data[1..$] == array);
+      1|                assert(pal.data !is array);
+       |        }
+       |
+0000000|        this( in TPalette tp ) {
+0000000|                data = tp.data.dup;
+       |        }
+       |
+       |        ubyte opIndex(int index) const {
+0000000|        return data[index];
+       |    }
+       |
+       |}
+..\d\tpalette.d is 71% covered

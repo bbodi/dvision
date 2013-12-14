@@ -1,0 +1,75 @@
+       |module trect;
+       |
+       |import configfile;
+       |import std.algorithm;
+       |
+       |import tpoint;
+       |
+       |struct TRect {
+       |
+       |        TPoint a, b;
+       |
+0000000|        this(int ax, int ay, int bx, int by) {
+0000000|            a.x = ax;
+0000000|            a.y = ay;
+0000000|            b.x = bx;
+0000000|            b.y = by;
+       |        }
+       |
+0000000|        this(in TPoint p1, in TPoint p2 ) {
+0000000|        a = p1;
+0000000|        b = p2;
+       |        }
+       |
+       |        void move( int deltaX, int deltaY ) {
+0000000|            a.x += deltaX;
+0000000|            a.y += deltaY;
+0000000|            b.x += deltaX;
+0000000|            b.y += deltaY;
+       |        }
+       |
+       |        ref TRect grow( int deltaX, int deltaY ) {
+0000000|            a.x -= deltaX;
+0000000|            a.y -= deltaY;
+0000000|            b.x += deltaX;
+0000000|            b.y += deltaY;
+0000000|                return this;
+       |        }
+       |
+       |        void intersect( in TRect r ) {
+0000000|            a.x = max( a.x, r.a.x );
+0000000|            a.y = max( a.y, r.a.y );
+0000000|            b.x = min( b.x, r.b.x );
+0000000|            b.y = min( b.y, r.b.y );
+       |        }
+       |
+       |        void Union( in TRect r ) {
+0000000|            a.x = min( a.x, r.a.x );
+0000000|            a.y = min( a.y, r.a.y );
+0000000|            b.x = max( b.x, r.b.x );
+0000000|            b.y = max( b.y, r.b.y );
+       |        }
+       |
+       |        bool contains( in TPoint p ) const {
+0000000|        return p.x >= a.x && p.x < b.x && p.y >= a.y && p.y < b.y;
+       |        }
+       |
+       |        bool opEquals(in TRect other) const {
+0000000|                return a == other.a && b == other.b;
+       |        }
+       |
+       |        bool isEmpty() const {
+0000000|                return a.x >= b.x || a.y >= b.y;
+       |        }
+       |
+       |        void deSerializeFrom(Elem* stream) {
+0000000|                a.deSerializeFrom(stream.a);
+0000000|                b.deSerializeFrom(stream.b);
+       |        }
+       |
+       |        void serializeTo(Elem* stream) {
+0000000|                a.serializeTo(stream.a);
+0000000|                b.serializeTo(stream.b);
+       |        }
+       |}
+..\d\trect.d is 0% covered

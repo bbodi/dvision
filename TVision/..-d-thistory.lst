@@ -1,0 +1,136 @@
+       |module thistory;
+       |
+       |import std.algorithm;
+       |
+       |import tvision;
+       |
+       |private immutable ubyte[] cpHistory = [0x16, 0x17];
+       |private immutable string icon = "a~b~c";
+       |private immutable TPalette palette = immutable(TPalette)(cpHistory);
+       |
+       |class THistory : TView {
+       |
+       |        private TInputLine link;
+       |    private HistoryId historyId;
+       |
+0000000|        this( in TRect bounds, TInputLine aLink, HistoryId aHistoryId) {
+0000000|            super(bounds);
+0000000|            link = aLink;
+0000000|            historyId = aHistoryId;
+0000000|            options |= ofPostProcess;
+0000000|            eventMask |= evBroadcast;
+       |        }
+       |
+       |        override void shutDown() {
+0000000|            link = null;
+0000000|            TView.shutDown();
+       |        }
+       |
+       |        override void draw() {
+0000000|            TDrawBuffer b;
+       |
+0000000|            b.moveCStr( 0, icon, getColor(0x0102) );
+0000000|            writeLine( 0, 0, size.x, size.y, b );
+       |        }
+       |
+       |        override ref immutable(TPalette) getPalette() const {
+0000000|            return palette;
+       |        }
+       |
+       |        override void handleEvent( ref TEvent event ) {
+0000000|            TView.handleEvent( event );
+0000000|            if( event.what == evMouseDown ||
+0000000|                  ( event.what == evKeyDown &&
+0000000|                    ctrlToArrow( event.keyDown.keyCode ) ==  KeyCode.kbDown &&
+0000000|                    (link.state & sfFocused) != 0
+       |                  )
+       |              )
+       |                {
+0000000|                link.select();
+       |                //historyAdd( historyId, link.getData() );
+0000000|                TRect r = link.getBounds();
+0000000|                r.a.x--;
+0000000|                r.b.x++;
+0000000|                r.b.y += 7;
+0000000|                r.a.y--;
+0000000|                TRect p = owner.getExtent();
+0000000|                r.intersect( p );
+0000000|                r.b.y--;
+0000000|                THistoryWindow historyWindow = initHistoryWindow( r );
+0000000|                if( historyWindow !is null ) {
+0000000|                    Command c = owner.execView( historyWindow );
+0000000|                    if( c == cm.Ok ) {
+0000000|                        string rslt = historyWindow.getSelection();
+0000000|                        link.setDataFromStr( rslt );
+0000000|                        link.selectAll( Select.All );
+0000000|                        link.drawView();
+       |                    }
+0000000|                    CLY_destroy( historyWindow );
+       |                        }
+0000000|                clearEvent( event );
+0000000|                } else if( event.what == evBroadcast ) {
+0000000|                        bool linkLostItsFocus = (event.message.command == cm.ReleasedFocus &&
+0000000|                                                                         cast(TView)event.message.infoPtr is link);
+0000000|                        if( linkLostItsFocus || event.message.command ==  cm.RecordHistory )
+0000000|                                historyAdd( historyId, link.getData() );
+       |                }
+       |        }
+       |
+       |        THistoryWindow initHistoryWindow( in TRect bounds ) const {
+0000000|            THistoryWindow p = new THistoryWindow( bounds, historyId );
+0000000|            p.helpCtx = link.helpCtx;
+0000000|            return p;
+       |        }
+       |
+       |}
+       |
+       |private const MaxHistories = 256;
+       |
+       |alias int HistoryId;
+       |private string[][HistoryId] histories;
+       |
+       |void initHistory() {
+       |}
+       |
+       |void clearHistory() {
+       |}
+       |
+       |private string firstItem(HistoryId id) {
+0000000|        auto arrPtr = id in histories;
+0000000|        if (arrPtr != null) {
+0000000|                return (*arrPtr)[0];
+       |        }
+0000000|        return null;
+       |}
+       |
+       |void historyAdd( HistoryId id, string str ) {
+0000000|        if (str.length == 0) {
+0000000|                return;
+       |        }
+0000000|        if (str == firstItem(id)) {
+0000000|                return;
+       |        }
+0000000|    insertString( id, str );
+       |}
+       |
+       |void insertString( HistoryId id, string str ) {
+0000000|        if (id !in histories) {
+0000000|                histories[id] = new string[0];
+       |        }
+0000000|        string[] strArr = histories[id];
+0000000|        int len = min(MaxHistories, strArr.length);
+0000000|        histories[id] = str ~ strArr[0..len];
+       |}
+       |
+       |uint historyCount( HistoryId id ) {
+0000000|        auto arrPtr = id in histories;
+0000000|        if (arrPtr != null) {
+0000000|                return (*arrPtr).length;
+       |        }
+0000000|        return 0;
+       |}
+       |
+       |string historyStr( HistoryId id, int index ) {
+0000000|        return histories[id][index];
+       |}
+..\d\thistory.d is 0% covered

@@ -1,0 +1,269 @@
+       |module tbutton;
+       |
+       |import std.uni;
+       |
+       |import common;
+       |import tview;
+       |
+       |private immutable wchar[] shadows = [0x2592, 0x2593, 0x2593];
+       |private static string markers = "[]";
+       |
+       |private static const ubyte[] cpButton = cast(ubyte[])"\x0A\x0B\x0C\x0D\x0E\x0E\x0E\x0F";
+       |
+       |alias int function(Command command, void *data) TButtonCallBack;
+       |private const int btcbGoOn=0, btcbEndModal=1;
+       |
+       |private immutable TPalette palette = immutable(TPalette)( cpButton);
+       |
+       |class TButton : TView {
+       |
+       |        protected Command command;
+       |    protected int flags;
+       |    protected bool amDefault;
+       |    protected TButtonCallBack callBack;
+       |    protected void *cbData; // SET: Callback data
+       |
+       |        private string title;
+       |
+0000000|        this( int x, int y, string aTitle, Command aCommand, int aFlags) {
+0000000|                this(TRect(x, y, x + aTitle.length+2, y+2), aTitle, aCommand, aFlags);
+       |        }
+       |
+0000000|        this( in TRect bounds, string aTitle, Command aCommand, int aFlags) {
+0000000|                super(bounds);
+0000000|                title = aTitle;
+0000000|                command = aCommand;
+0000000|                flags = aFlags;
+0000000|                amDefault =  (aFlags & bfDefault) != 0;
+0000000|                options |= ofSelectable | ofFirstClick | ofPreProcess | ofPostProcess;
+0000000|        eventMask |= evBroadcast;
+0000000|        if( !commandEnabled(aCommand) )
+0000000|                state |= sfDisabled;
+0000000|        callBack = null;
+       |        // This class can be "Braille friendly"
+0000000|        if (TScreen.getShowCursorEver())
+0000000|                state |= sfCursorVis;
+0000000|                assert(size.y >= 2, "Bounds of the TButton must be higher or equal to 2");
+       |        }
+       |
+       |        void setCallBack(TButtonCallBack cb, void *aData=null) { 
+0000000|                callBack=cb; 
+0000000|                cbData=aData; 
+       |        };
+       |
+       |    string getText() { 
+0000000|        return title;
+       |    };
+       |
+       |    override void draw() {
+0000000|        drawState(false);
+       |        }
+       |
+       |        void drawState(bool down) {
+0000000|            ushort cButton, cShadow;
+0000000|            wchar   ch = ' ';
+0000000|            int    i;
+0000000|            TDrawBuffer b;
+       |
+0000000|            if( (state & sfDisabled) != 0 )
+0000000|                cButton = getColor(0x0404);
+       |            else {
+0000000|                cButton = getColor(0x0501);
+0000000|                if( (state & sfActive) != 0 ) {
+0000000|                    if( (state & sfSelected) != 0 )
+0000000|                        cButton = getColor(0x0703);
+0000000|                    else if( amDefault )
+0000000|                        cButton = getColor(0x0602);
+       |                        }
+       |                }
+0000000|            cShadow = getColor(8);
+0000000|            int s = size.x-1;
+0000000|            int T = size.y / 2 - 1;
+       |
+0000000|            for( int y = 0; y <= size.y-2; y++ ) {
+0000000|                b.moveChar( 0, ' ', cButton, size.x );
+0000000|                b.putAttribute( 0, cShadow );
+0000000|                if( down ) {
+0000000|                    b.putAttribute( 1, cShadow );
+0000000|                    i = 2;
+       |                        } else {
+0000000|                    b.putAttribute( s, cShadow );
+0000000|                    if( showMarkers == false ) {
+0000000|                        if( y == 0 ) {
+0000000|                            b.putChar( s, shadows[0] );
+       |                        } else {
+0000000|                            b.putChar( s, shadows[1] );
+       |                        }
+0000000|                        ch = shadows[2];
+       |                                }
+0000000|                    i =  1;
+       |                        }
+       |
+0000000|                if( y == T && title !is null )
+0000000|                    drawTitle( b, s, i, cButton, down );
+       |
+0000000|                if( showMarkers && !down ) {
+0000000|                    b.putChar( 1, markers[0] );
+0000000|                    b.putChar( s-1, markers[1] );
+       |                        }
+0000000|                writeLine( 0, y, size.x, 1, b );
+       |                }
+0000000|            b.moveChar( 0, ' ', cShadow, 2 );
+0000000|            b.moveChar( 2, ch, cShadow, s-1 );
+0000000|            writeLine( 0, size.y-1, size.x, 1, b );
+       |        }
+       |
+       |    private void drawTitle( ref TDrawBuffer b, int s, int i, ushort cButton, bool down ) {
+0000000|        int l, scOff;
+0000000|        string theTitle = getText();
+0000000|        if( (flags & bfLeftJust) != 0 ) {
+0000000|                l = 1;
+       |        } else {
+0000000|                l = (s - cast(int)theTitle.length - 1)/2;
+0000000|                if( l < 1 )
+0000000|                l = 1;
+       |        }
+0000000|        b.moveCStr( i+l, theTitle, cButton );
+       |
+0000000|        if( showMarkers == true && !down ) {
+0000000|                if( (state & sfSelected) != 0 )
+0000000|                scOff = 0;
+0000000|                else if( amDefault )
+0000000|                scOff = 2;
+       |                else
+0000000|                scOff = 4;
+0000000|                b.putChar( 0, specialChars[scOff] );
+0000000|                b.putChar( s, specialChars[scOff+1] );
+       |        }
+0000000|        if( (state & sfActive) && (state & sfSelected) ) {
+0000000|                setCursor( i+l-1 , 0 );
+0000000|                resetCursor();
+       |        }
+       |    }
+       |
+       |        override ref immutable(TPalette) getPalette() const {
+0000000|            return palette;
+       |        }
+       |
+       |        override void handleEvent( ref TEvent event ) {
+0000000|            bool down = false;
+0000000|            char c = hotKey( getText() );
+       |
+0000000|            TRect clickRect = getExtent();
+0000000|            clickRect.a.x++;
+0000000|            clickRect.b.x--;
+0000000|            clickRect.b.y--;
+       |
+0000000|            if( event.what == evMouseDown ) {
+0000000|                TPoint mouse = makeLocal( event.mouse.where );
+0000000|                if( !clickRect.contains(mouse) )
+0000000|                    clearEvent( event );
+       |                }
+0000000|            TView.handleEvent(event);
+       |
+0000000|            switch( event.what ) {
+0000000|                case evMouseDown:
+0000000|                    clickRect.b.x++;
+       |                    do  {
+0000000|                        TPoint mouse = makeLocal( event.mouse.where );
+0000000|                        if( down != clickRect.contains( mouse ) ) {
+0000000|                            down = !down;
+0000000|                            drawState( down );
+       |                                        }
+0000000|                                } while( mouseEvent( event, evMouseMove ) );
+0000000|                    if( down ) {
+0000000|                        press();
+0000000|                        drawState( false );
+       |                                }
+0000000|                    clearEvent( event );
+0000000|                    break;
+       |
+0000000|                case evKeyDown:
+0000000|                    if( event.keyDown.keyCode == TGKey.GetAltCode(c) ||
+0000000|                        ( owner.phase == phaseType.phPostProcess &&
+0000000|                          c != 0 &&
+0000000|                          CompareUpperASCII(event.keyDown.charScan.charCode, c)
+       |                          //uctoupper(event.keyDown.charScan.charCode) == c
+       |                        ) ||
+0000000|                        ( (state & sfFocused) != 0 &&
+0000000|                          event.keyDown.charScan.charCode == ' '
+       |                        )
+       |                      ) {
+0000000|                        press();
+0000000|                        clearEvent( event );
+       |                                }
+0000000|                    break;
+       |
+0000000|                case evBroadcast:
+0000000|                                Command cmd = event.message.command;
+0000000|                                if (cmd == cm.Default) {
+0000000|                                        if( amDefault && !(state & sfDisabled) ) {
+0000000|                                                press();
+0000000|                                                clearEvent(event);
+       |                                        }
+       |                                }
+       |                                        
+0000000|                                if (cmd == cm.GrabDefault || cmd == cm.ReleaseDefault) {
+0000000|                                        if( (flags & bfDefault) != 0 ) {
+0000000|                                                amDefault = event.message.command == cm.ReleaseDefault;
+0000000|                                                drawView();
+       |                                        }
+       |                                }
+0000000|                                if (cmd == cm.CommandSetChanged) {
+0000000|                                        if (((state & sfDisabled) && commandEnabled(command)) ||
+0000000|                                                (!(state & sfDisabled) && !commandEnabled(command))) {
+0000000|                                                setState(sfDisabled, !commandEnabled(command));
+0000000|                                                drawView();
+       |                                        }
+       |                                }
+0000000|                                break;
+0000000|                        default:
+0000000|                                break;
+       |                }
+       |        }
+       |
+       |        void makeDefault( bool enable ) {
+0000000|            if( (flags & bfDefault) == 0 ) {
+0000000|                message( owner,
+       |                         evBroadcast,
+0000000|                         (enable == true) ? cm.GrabDefault : cm.ReleaseDefault,
+       |                         this
+       |                       );
+0000000|                amDefault = enable;
+0000000|                drawView();
+       |                }
+       |        }
+       |
+       |        override void setState( ushort aState, bool enable ) {
+0000000|            TView.setState(aState, enable);
+0000000|            if( aState & (sfSelected | sfActive) ) {
+0000000|                if(!enable) {                           // BUG FIX - EFW - Thu 10/19/95
+0000000|                    state &= ~sfFocused;
+0000000|                    makeDefault(false);
+       |                }
+0000000|                drawView();
+       |            }
+0000000|            if( (aState & sfFocused) != 0 )
+0000000|                makeDefault( enable );
+       |        }
+       |
+       |        void press() {
+0000000|                message(owner, evBroadcast, cm.RecordHistory,0);
+0000000|                if (flags & bfBroadcast)
+0000000|                   message(owner, evBroadcast, command,this);
+       |                else {
+0000000|                        if (callBack) {
+0000000|                                int ret=callBack(command,cbData);
+0000000|                                if (ret==btcbEndModal && owner)
+0000000|                                        owner.endModal(command);
+       |                        } else {
+0000000|                                TEvent e;
+0000000|                                e.what=evCommand;
+0000000|                                e.message.command = command;
+0000000|                                e.message.infoPtr = cast(void*)this;
+0000000|                                putEvent(e);
+       |                        }
+       |                }
+       |        }
+       |}
+..\tbutton.d is 0% covered
